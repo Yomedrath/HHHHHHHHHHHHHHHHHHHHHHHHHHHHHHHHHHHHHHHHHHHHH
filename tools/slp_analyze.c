@@ -11,8 +11,8 @@
 #include "game.h"
 #include "slp.h"
 
-typedef enum { T_WAVEDASH, T_WAVELAND, T_DASHDANCE, T_SHORTHOP, T_FULLHOP, T_COUNT } Tech;
-static const char *TECH_NAMES[T_COUNT] = { "Wavedash", "Waveland", "Dashdance", "Short Hop", "Full Hop" };
+typedef enum { T_WAVEDASH, T_WAVELAND, T_DASHDANCE, T_SHORTHOP, T_FULLHOP, T_AERIAL, T_SHFFL, T_COUNT } Tech;
+static const char *TECH_NAMES[T_COUNT] = { "Wavedash", "Waveland", "Dashdance", "Short Hop", "Full Hop", "Aerial", "SHFFL" };
 
 typedef struct {
     Tech tech;
@@ -20,6 +20,7 @@ typedef struct {
     float real_dx, eng_dx;          /* Weg in x über die Szene */
     float real_h, eng_h;            /* Sprunghöhe (nur Hops) */
     float max_err, end_err;         /* Positionsabweichung */
+    int land_real, land_eng;        /* Frames im Landing-Zustand (Aerials) */
     int frames, state_match;        /* Frames mit gleichem Zustand (Eingabe gleich interpretiert?) */
 } Event;
 
@@ -74,6 +75,8 @@ static FState map_action(uint16_t a, bool airborne)
     case AS_SQUAT: case AS_SQUAT_WAIT: return ST_CROUCH;
     case AS_ESCAPE_AIR: return ST_AIRDODGE;
     case AS_FALL_SPECIAL: return ST_FREEFALL;
+    case 65: case 66: case 67: case 68: case 69: return ST_ATTACK;
+    case AS_LANDING: case AS_LANDING_FALL_SPECIAL: case 70: case 71: case 72: case 73: case 74: return ST_LANDING;
     default: return airborne ? ST_AIR : ST_IDLE;
     }
 }
@@ -89,6 +92,7 @@ static int group_of(FState s)
     case ST_AIRDODGE: return 5;
     case ST_LANDING: return 6;
     case ST_AIR: case ST_FREEFALL: return 7;
+    case ST_ATTACK: return 8;
     default: return 0;   /* Idle, Walk, Crouch ... */
     }
 }
@@ -179,6 +183,8 @@ static void simulate(const SlpGame *sg, Event *ev)
         if (err > ev->max_err) ev->max_err = err;
         ev->frames++;
         if (group_of(f->state) == real_group(&fr[k])) ev->state_match++;
+        if (real_group(&fr[k]) == 6) ev->land_real++;
+        if (f->state == ST_LANDING) ev->land_eng++;
         if (f->pos.y - y0 > top_eng) top_eng = f->pos.y - y0;
         if (fr[k].y - ry0 > top_real) top_real = fr[k].y - ry0;
         if (csv)
@@ -269,6 +275,36 @@ static void detect(const SlpGame *sg, int port, EventList *out)
                 k = e.end;
             }
             continue;
+        }
+
+        /* Aerial von Start bis Ende der Landung */
+        {
+            int a = fr[k].action;
+            if (a >= 65 && a <= 69 && fr[k - 1].action != a && fr[k - 1].airborne) {
+                int j = k;
+                while (j + 1 < n && fr[j + 1].action == a) j++;
+                if (j + 1 < n && !fr[j + 1].airborne) {
+                    int le = j + 1;
+                    while (le + 1 < n && fr[le + 1].action == fr[j + 1].action) le++;
+                    Event e = { 0 };
+                    e.tech = T_AERIAL;
+                    e.port = port;
+                    e.start = k;
+                    e.end = le;
+                    push(out, e);
+                    /* SHFFL: davor Short Hop aus dem Jumpsquat, Landung L-gecancelt */
+                    int js = k - 1;
+                    while (js > 2 && (fr[js].action == AS_JUMP_F || fr[js].action == AS_JUMP_B)) js--;
+                    if (fr[js].action == AS_KNEE_BEND && fr[j + 1].lcancel == 1 && k - js < 12) {
+                        int ks = js;
+                        while (ks > 2 && fr[ks - 1].action == AS_KNEE_BEND) ks--;
+                        Event s2 = e;
+                        s2.tech = T_SHFFL;
+                        s2.start = ks;
+                        push(out, s2);
+                    }
+                }
+            }
         }
 
         /* Sprung ohne Aktion bis zum Scheitelpunkt */
@@ -367,6 +403,12 @@ int main(int argc, char **argv)
             printf("%-10s %6d %10.2f %10.2f %10.2f %10.2f %9.0f%%", TECH_NAMES[t], cnt, rd / cnt, ed / cnt, ee / cnt,
                    me / cnt, fr_all ? 100.0 * (double)fr_ok / (double)fr_all : 0.0);
             if (t == T_SHORTHOP || t == T_FULLHOP) printf("   Höhe real %.2f / Engine %.2f", rh / cnt, eh / cnt);
+            if (t == T_AERIAL || t == T_SHFFL) {
+                double lr = 0, le = 0;
+                for (int i = 0; i < ev.n; i++)
+                    if (ev.v[i].tech == (Tech)t) { lr += ev.v[i].land_real; le += ev.v[i].land_eng; }
+                printf("   Landing-Frames real %.1f / Engine %.1f", lr / cnt, le / cnt);
+            }
             printf("\n");
         }
 

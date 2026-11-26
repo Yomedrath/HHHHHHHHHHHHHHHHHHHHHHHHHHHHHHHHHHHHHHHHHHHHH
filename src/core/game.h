@@ -45,16 +45,30 @@ typedef enum {
     ST_COUNT
 } FState;
 
-typedef enum { ATK_NONE, ATK_JAB, ATK_FSTRONG, ATK_NAIR, ATK_COUNT } AttackId;
+typedef enum {
+    ATK_NONE, ATK_JAB, ATK_FSTRONG,
+    ATK_NAIR, ATK_FAIR, ATK_BAIR, ATK_UAIR, ATK_DAIR,
+    ATK_COUNT
+} AttackId;
 
+#define MAX_HIT_WINDOWS 8
+
+/* Frame-Angaben 1-basiert wie in Melee-Frame-Daten (state_frame 0 = Frame 1). */
 typedef struct {
     const char *name;
-    int total, active_start, active_end;  /* Frames, ab 0 gezählt */
-    float off_x, off_y, radius;            /* Hitbox relativ zum Fußpunkt */
+    int total;                              /* Animationslänge */
+    int nwin;                               /* aktive Hitbox-Fenster [von, bis] */
+    int win[MAX_HIT_WINDOWS][2];
+    int iasa;                               /* ab diesem Frame wieder handlungsfähig (0 = Ende) */
+    int ac_early, ac_late;                  /* Autocancel: Landung in Frame <= early oder >= late */
+    int landing_lag;                        /* Landing Lag ohne L-Cancel (mit L-Cancel: halbiert) */
+    float off_x, off_y, radius;             /* Platzhalter-Hitbox relativ zum Fußpunkt */
     float damage, base_kb, kb_growth, angle_deg;
-    int landing_lag;                        /* nur Luftangriffe */
+    int kb_dir;                             /* +1 in Blickrichtung, -1 nach hinten (Bair) */
     bool aerial;
 } AttackData;
+
+#define LCANCEL_WINDOW 7                    /* L/R/Z bis zu 7 Frames vor der Landung */
 
 typedef enum { CHAR_FUCHS, CHAR_BIRDIE, CHAR_ASSASSIN, CHAR_DUELIST, NUM_CHARS } CharId;
 
@@ -62,6 +76,7 @@ typedef struct {
     const char *name;
     float walk_max, walk_accel, dash_init, run_max, ground_friction;
     float dash_accel_base, dash_accel_add;   /* Dash-Beschleunigung = base + add * |Stick| */
+    float jump_h_stick, jump_h_ground, jump_h_max; /* Absprung-x = Stick*a + v_Boden*b, max |c| */
     float air_accel_base, air_accel_add, air_max, air_friction;
     float gravity, fall_max, fastfall;
     int jumpsquat;
@@ -87,6 +102,8 @@ typedef struct {
     AttackId attack;
     bool attack_hit;
     int landing_lag;
+    int lcancel_timer;          /* > 0: L-Cancel aktiv (L/R/Z kürzlich gedrückt) */
+    bool last_lcancel;          /* letzte Aerial-Landung war L-gecancelt */
     int hitstun;
     float percent;
     int stocks;
@@ -111,7 +128,7 @@ typedef struct {
 const Stage *stage_get(int index);
 
 /* fighter.c */
-const AttackData *attack_data(AttackId id);
+const AttackData *attack_data(CharId c, AttackId id);
 const char *state_name(FState s);
 FighterParams fighter_params(CharId c);
 bool fighter_hitbox(const Fighter *f, Vec2 *center, float *radius);

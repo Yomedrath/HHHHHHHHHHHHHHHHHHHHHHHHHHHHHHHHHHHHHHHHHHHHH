@@ -150,6 +150,79 @@ static void test_replay(void)
     remove("test_replay.p1v1r");
 }
 
+/* Fuchs in Höhe y über FD, frei fallend */
+static Fighter *air_setup(Game *g, CharId c, float y)
+{
+    CharId cs[2] = { c, CHAR_BIRDIE };
+    game_init(g, 1, cs);
+    g->f[1].pos.x = 200;                       /* Gegner aus dem Weg */
+    g->f[1].pos.y = 0;
+    Fighter *f = &g->f[0];
+    f->pos.x = 0; f->pos.y = y; f->vel.x = f->vel.y = 0;
+    run(g, NONE, NONE, 1);
+    return f;
+}
+
+static int land_after_nair(float y, int lcancel_frame)
+{
+    Game g;
+    Fighter *f = air_setup(&g, CHAR_FUCHS, y);
+    Input a = { 0 }; a.a = true;
+    run(&g, a, NONE, 1);
+    for (int i = 1; i < 80 && !f->grounded; i++) {
+        Input in = { 0 };
+        if (i == lcancel_frame) in.l = true;
+        run(&g, in, NONE, 1);
+    }
+    return f->state == ST_LANDING ? f->landing_lag : -1;
+}
+
+static void test_aerials(void)
+{
+    int plain = land_after_nair(12, -1);
+    int lc = 0;
+    for (int fr = 1; fr < 20 && lc == 0; fr++) {
+        int v = land_after_nair(12, fr);
+        if (v == 7) lc = fr;
+    }
+    int ac = land_after_nair(90, -1);
+    printf("  Fuchs Nair: Landing Lag %d (Melee 15), mit L-Cancel 7 ab Druck in Frame %d, Autocancel-Landung %d (Melee 4)\n",
+           plain, lc, ac);
+    CHECK(plain == 15, "Nair-Landing-Lag falsch (%d)", plain);
+    CHECK(lc > 0, "L-Cancel wirkt nicht");
+    CHECK(ac == 4, "Autocancel wirkt nicht (%d)", ac);
+
+    /* L-Cancel-Fenster: 7 Frames vor der Landung, nicht 8 */
+    int window = 0;
+    for (int fr = 1; fr < 20; fr++) if (land_after_nair(12, fr) == 7) window++;
+    CHECK(window == 7, "L-Cancel-Fenster ist %d statt 7 Frames", window);
+
+    /* IASA: Nair ab Frame 42 per Doppelsprung abbrechbar, vorher nicht */
+    Game g;
+    Fighter *f = air_setup(&g, CHAR_FUCHS, 160);
+    Input a = { 0 }; a.a = true;
+    run(&g, a, NONE, 1);
+    run(&g, NONE, NONE, 39);                    /* jetzt Frame 40 */
+    Input j = { 0 }; j.jump = true;
+    run(&g, j, NONE, 1);                        /* Frame 41: zu früh */
+    bool early = f->state != ST_ATTACK;
+    run(&g, NONE, NONE, 1);
+    run(&g, j, NONE, 1);                        /* Frame 43: erlaubt */
+    printf("  Aerial Interrupt: Frame 41 %s, Frame 43 -> %s\n", early ? "abgebrochen (falsch)" : "gesperrt",
+           state_name(f->state));
+    CHECK(!early && f->state == ST_AIR && f->vel.y > 0, "IASA falsch");
+
+    /* Richtung: C-Stick nach hinten = Bair, Hitbox hinter dem Kämpfer */
+    f = air_setup(&g, CHAR_FUCHS, 160);
+    f->facing = 1;
+    Input c = { 0 }; c.cstick_x = -1.0f;
+    run(&g, c, NONE, 1);
+    run(&g, NONE, NONE, 5);
+    Vec2 hc; float hr;
+    bool hb = fighter_hitbox(f, &hc, &hr);
+    CHECK(f->attack == ATK_BAIR && hb && hc.x < f->pos.x, "C-Stick-Bair falsch");
+}
+
 static void test_ledge(void)
 {
     Game g; CharId cs[2] = { CHAR_DUELIST, CHAR_BIRDIE };
@@ -215,6 +288,7 @@ int main(void)
     test_wavedash();
     test_airdodge();
     test_replay();
+    test_aerials();
     test_ledge();
     test_hit();
     printf("Autonome Matches\n");

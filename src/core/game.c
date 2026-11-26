@@ -139,7 +139,18 @@ static void land(Game *g, Fighter *f, int surf)
     int lag = f->p.land_lag;
     if (from == ST_AIRDODGE) lag = AIRDODGE_LAND_LAG;          /* Wavedash / Waveland */
     else if (from == ST_FREEFALL) lag = 10;
-    else if (from == ST_ATTACK && attack_data(f->attack)->aerial) lag = attack_data(f->attack)->landing_lag;
+    else if (from == ST_ATTACK && attack_data(f->character, f->attack)->aerial) {
+        /* Aerial-Landung: im Autocancel-Fenster normales Landing, sonst Landing Lag
+         * (mit L-Cancel halbiert, abgerundet – wie in Melee) */
+        const AttackData *a = attack_data(f->character, f->attack);
+        int fr = f->state_frame + 1;
+        bool autocancel = (a->ac_early > 0 && fr <= a->ac_early) || (a->ac_late > 0 && fr >= a->ac_late);
+        f->last_lcancel = false;
+        if (!autocancel) {
+            f->last_lcancel = f->lcancel_timer > 0;
+            lag = f->last_lcancel ? a->landing_lag / 2 : a->landing_lag;
+        }
+    }
     else if (from == ST_HITSTUN) { lag = 6; f->hitstun = 0; }
 
     f->attack = ATK_NONE;
@@ -173,7 +184,26 @@ static bool try_ground_actions(Game *g, Fighter *f)
     return false;
 }
 
-/* Luftaktionen (Doppelsprung, Airdodge, Nair, Fastfall). */
+/* Welches Aerial? A + Stickrichtung oder C-Stick-Flick (relativ zur Blickrichtung). */
+static AttackId aerial_from_dir(const Fighter *f, float x, float y, bool cstick)
+{
+    float mag = sqrtf(x * x + y * y);
+    if (!cstick && mag < 0.3f) return ATK_NAIR;
+    if (fabsf(y) >= fabsf(x)) return y > 0 ? ATK_UAIR : ATK_DAIR;
+    return x * (float)f->facing > 0 ? ATK_FAIR : ATK_BAIR;
+}
+
+static AttackId aerial_input(const Fighter *f)
+{
+    float cx = f->in.cstick_x, cy = f->in.cstick_y;
+    float pcx = f->prev.cstick_x, pcy = f->prev.cstick_y;
+    bool cflick = (cx * cx + cy * cy) > 0.36f && (pcx * pcx + pcy * pcy) <= 0.36f;
+    if (cflick) return aerial_from_dir(f, cx, cy, true);
+    if (pressed_a(f)) return aerial_from_dir(f, f->in.stick_x, f->in.stick_y, false);
+    return ATK_NONE;
+}
+
+/* Luftaktionen (Doppelsprung, Airdodge, Aerials, Fastfall). */
 static bool try_air_actions(Fighter *f)
 {
     if (jump_pressed(f) && f->jumps_left > 0) {
@@ -185,7 +215,8 @@ static bool try_air_actions(Fighter *f)
         return true;
     }
     if (pressed_shield(f)) { start_airdodge(f); return true; }
-    if (pressed_a(f)) { start_attack(f, ATK_NAIR); return true; }
+    AttackId aer = aerial_input(f);
+    if (aer != ATK_NONE) { start_attack(f, aer); return true; }
     return false;
 }
 
@@ -337,7 +368,7 @@ static void update_state(Game *g, Fighter *f)
             /* Full Hop, wenn am Ende des Jumpsquats noch eine Sprungeingabe gehalten wird */
             bool full = f->in.jump || sy > 0.66f;
             f->vel.y = full ? f->p.fullhop : f->p.shorthop;
-            f->vel.x = clampf(f->vel.x * 0.8f + sx * 0.35f, -f->p.air_max * 1.2f, f->p.air_max * 1.2f);
+            f->vel.x = clampf(f->vel.x * f->p.jump_h_ground + sx * f->p.jump_h_stick, -f->p.jump_h_max, f->p.jump_h_max);
             f->jumps_left = f->p.max_jumps - 1;
             enter_air(f, ST_AIR);
             /* L/R im Absprung-Frame: Airdodge ersetzt den Sprung sofort (Wavedash) */
@@ -351,11 +382,19 @@ static void update_state(Game *g, Fighter *f)
         break;
 
     case ST_ATTACK: {
-        const AttackData *a = attack_data(f->attack);
+        const AttackData *a = attack_data(f->character, f->attack);
         if (a->aerial) {
+            int fr = f->state_frame + 1;
+            /* ab IASA: Aerial lässt sich durch andere Luftaktionen abbrechen (Aerial Interrupt) */
+            if (a->iasa > 0 && fr >= a->iasa) {
+                AttackId keep = f->attack;
+                f->attack = ATK_NONE;
+                if (try_air_actions(f)) break;
+                f->attack = keep;
+            }
             air_drift(f, 1.0f);
             check_fastfall(f);
-            if (f->state_frame >= a->total) { f->attack = ATK_NONE; set_state(f, ST_AIR); }
+            if (fr >= a->total) { f->attack = ATK_NONE; set_state(f, ST_AIR); }
         } else {
             ground_friction(f);
             if (f->state_frame >= a->total) { f->attack = ATK_NONE; set_state(f, ST_IDLE); }
@@ -537,12 +576,12 @@ static bool circle_hits_body(Vec2 c, float r, const Fighter *t)
 
 static void apply_hit(Fighter *atk, Fighter *t)
 {
-    const AttackData *a = attack_data(atk->attack);
+    const AttackData *a = attack_data(atk->character, atk->attack);
     t->percent = fminf(t->percent + a->damage, 999.0f);
     /* Gewichtsfaktor wie in Melee: 200 / (Gewicht + 100) */
     float speed = (a->base_kb + t->percent * a->kb_growth) * (200.0f / (t->p.weight + 100.0f));
     float ang = a->angle_deg * PI_F / 180.0f;
-    t->kb.x = cosf(ang) * (float)atk->facing * speed;
+    t->kb.x = cosf(ang) * (float)atk->facing * (float)a->kb_dir * speed;
     t->kb.y = sinf(ang) * speed;
     t->vel.x = t->vel.y = 0;
     t->pos.y += 0.1f;
@@ -550,7 +589,7 @@ static void apply_hit(Fighter *atk, Fighter *t)
     t->fastfalling = false;
     t->ledge = -1;
     t->attack = ATK_NONE;
-    t->facing = -atk->facing;
+    t->facing = -atk->facing * a->kb_dir;
     enter_air(t, ST_HITSTUN);
     atk->attack_hit = true;
 }
@@ -640,6 +679,9 @@ void game_step(Game *g, const Input inputs[MAX_FIGHTERS])
         f->stick_x_hist[0] = f->in.stick_x;
 
         if (f->state == ST_DEAD) continue;
+        /* L-Cancel: L, R oder Z in der Luft startet ein 7-Frame-Fenster */
+        if (f->lcancel_timer > 0) f->lcancel_timer--;
+        if (!f->grounded && (pressed_shield(f) || (f->in.z && !f->prev.z))) f->lcancel_timer = LCANCEL_WINDOW;
         f->state_frame++;
         update_state(g, f);
         physics(g, f);

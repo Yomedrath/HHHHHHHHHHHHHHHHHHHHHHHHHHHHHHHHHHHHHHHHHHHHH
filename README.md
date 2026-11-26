@@ -27,8 +27,23 @@ und Fastfall-Speed, Jumpsquat sowie Full-Hop-, Short-Hop- und Doppelsprung-Höhe
 | Assassin | Sheik |
 | Duelist | Marth |
 
-Noch Platzhalter: Hurtbox-Größen, Walk-Beschleunigung und die Angriffe. Alle Kämpfer teilen sich
-Jab, Strong und Nair mit eigenen Werten.
+### Aerials
+
+Jeder Kämpfer hat Nair, Fair, Bair, Uair und Dair mit Melee-Frame-Daten (SmashWiki): Länge, aktive
+Hitbox-Frames, IASA, Autocancel-Fenster und Landing Lag. Ausgelöst werden sie mit A und der
+Stickrichtung oder mit einem C-Stick-Flick.
+- **L-Cancel:** L, R oder Z bis zu 7 Frames vor der Landung halbiert den Landing Lag.
+- **Autocancel:** Wer im Autocancel-Fenster landet, hat nur das normale Landing (4 Frames).
+- **Aerial Interrupt:** Ab dem IASA-Frame lässt sich ein Aerial durch Doppelsprung, Airdodge oder
+  ein anderes Aerial abbrechen.
+- **Edgecancel:** Rutscht man während des Landing Lags von einer Kante, bricht der Lag ab.
+
+Diese Mechaniken entsprechen Melee. Position, Größe und Knockback der Hitboxen sind Platzhalter.
+
+Der seitliche Absprung-Schwung (Stick × a + Bodengeschwindigkeit × b, mit Höchstwert) ist per
+Regression aus den 21 Replays bestimmt, ebenso die Dash-Beschleunigung pro Charakter.
+
+Noch Platzhalter: Hurtbox-Größen, Walk-Beschleunigung, Bodenangriffe (Jab und Strong für alle gleich).
 
 ## Stages
 
@@ -54,7 +69,9 @@ Die Logik folgt `ftCo_EscapeAir` aus dem Melee-Decomp:
 | | GameCube-Controller / Gamepad | Tastatur P1 | Tastatur P2 |
 |---|---|---|---|
 | Bewegen | Stick | WASD (Shift = Gehen) | Pfeile (RShift = Gehen) |
-| Angriff | A (Stick zur Seite = Strong) | J | Num 1 |
+| Angriff | A (am Boden: Stick zur Seite = Strong; in der Luft: Stickrichtung = Aerial) | J | Num 1 |
+| Aerial | C-Stick in die Richtung | – | – |
+| L-Cancel | L / R / Z kurz vor der Landung | L | Num 2 |
 | Sprung | X / Y / Stick hoch | Space / I | Num 0 / Num 5 |
 | Airdodge / Wavedash | L / R | L | Num 2 |
 | Pause | Start | Enter | Num Enter |
@@ -62,8 +79,9 @@ Die Logik folgt `ftCo_EscapeAir` aus dem Melee-Decomp:
 F1 zeigt Zustände an, Esc führt zurück ins Menü. Im Menü lässt sich P2 auf CPU stellen.
 
 Funktionen: Dash, Dashdance, Run, Turn, Crouch, Short Hop und Full Hop, Doppelsprung, Fastfall,
-Airdodge, Wavedash, Waveland, Plattform-Drop, Ledge-Grab mit Getup und Ledge-Jump, Knockback mit
-Hitstun, KOs und 4 Stocks.
+Airdodge, Wavedash, Waveland, Plattform-Drop, Ledge-Grab mit Getup und Ledge-Jump, 5 Aerials pro
+Kämpfer mit L-Cancel, Autocancel und Aerial Interrupt, SHFFL, Knockback mit Hitstun, KOs und
+4 Stocks.
 
 ## Vergleich mit echtem Melee (Slippi-Replays)
 
