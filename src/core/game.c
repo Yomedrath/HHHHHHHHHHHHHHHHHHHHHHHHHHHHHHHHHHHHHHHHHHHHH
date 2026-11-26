@@ -71,18 +71,19 @@ static void start_attack(Fighter *f, AttackId id)
 
 static void start_airdodge(Fighter *f)
 {
+    /* Wie Melee: alte Bewegung wird komplett ersetzt. In der Deadzone -> Stillstand,
+     * sonst feste Kraft in Richtung des Stickwinkels (Betrag der Auslenkung egal). */
     float sx = f->in.stick_x, sy = f->in.stick_y;
-    float mag = sqrtf(sx * sx + sy * sy);
-    if (mag > 0.3f) {
-        f->vel.x = sx / mag * f->p.airdodge_speed;
-        f->vel.y = sy / mag * f->p.airdodge_speed;
-    } else {
+    if (fabsf(sx) < AIRDODGE_DEADZONE && fabsf(sy) < AIRDODGE_DEADZONE) {
         f->vel.x = 0;
         f->vel.y = 0;
+    } else {
+        float ang = atan2f(sy, sx);
+        f->vel.x = AIRDODGE_FORCE * cosf(ang);
+        f->vel.y = AIRDODGE_FORCE * sinf(ang);
     }
     f->fastfalling = false;
     f->buffered_airdodge = false;
-    f->invuln = 20;
     set_state(f, ST_AIRDODGE);
 }
 
@@ -112,7 +113,7 @@ static void land(Game *g, Fighter *f, int surf)
     f->fastfalling = false;
 
     int lag = f->p.land_lag;
-    if (from == ST_AIRDODGE) lag = f->p.wavedash_lag;          /* Wavedash / Waveland */
+    if (from == ST_AIRDODGE) lag = AIRDODGE_LAND_LAG;          /* Wavedash / Waveland */
     else if (from == ST_FREEFALL) lag = 10;
     else if (from == ST_ATTACK && attack_data(f->attack)->aerial) lag = attack_data(f->attack)->landing_lag;
     else if (from == ST_HITSTUN) { lag = 6; f->hitstun = 0; }
@@ -338,10 +339,8 @@ static void update_state(Game *g, Fighter *f)
         break;
 
     case ST_AIRDODGE:
-        f->vel.x *= 0.9f;
-        f->vel.y *= 0.9f;
-        if (f->state_frame >= f->p.airdodge_frames) set_state(f, ST_FREEFALL);
-        else if (f->state_frame > 10) try_ledge_grab(g, f);
+        /* kein Ledge-Grab während der Animation; danach hilflos */
+        if (f->state_frame >= AIRDODGE_LENGTH) set_state(f, ST_FREEFALL);
         break;
 
     case ST_HITSTUN:
@@ -434,6 +433,13 @@ static void physics(Game *g, Fighter *f)
 
     if (f->fastfalling && f->state != ST_AIRDODGE) f->vel.y = -f->p.fastfall;
 
+    /* Airdodge: Geschwindigkeit dämpfen statt Schwerkraft (state_frame 0 = Frame 1) */
+    bool dodge_decay = (f->state == ST_AIRDODGE && f->state_frame < AIRDODGE_DECAY_END);
+    if (dodge_decay) {
+        f->vel.x *= AIRDODGE_DECAY;
+        f->vel.y *= AIRDODGE_DECAY;
+    }
+
     /* erst bewegen, dann Schwerkraft (wie in Melee: Höhe ≈ v²/2g + v/2) */
     Vec2 old = f->pos;
     f->pos.x += f->vel.x + f->kb.x;
@@ -441,13 +447,11 @@ static void physics(Game *g, Fighter *f)
     float vy_total = f->vel.y + f->kb.y;
     decay_knockback(f);
 
-    bool no_gravity = (f->state == ST_AIRDODGE && f->state_frame < 10);
-    if (!no_gravity) {
+    if (!dodge_decay) {
         f->vel.y -= f->p.gravity;
-        if (f->state != ST_AIRDODGE) {
-            if (f->fastfalling) f->vel.y = -f->p.fastfall;
-            else if (f->vel.y < -f->p.fall_max) f->vel.y = -f->p.fall_max;
-        }
+        if (f->fastfalling) f->vel.y = -f->p.fastfall;
+        else if (f->vel.y < -f->p.fall_max) f->vel.y = -f->p.fall_max;
+        if (f->state == ST_AIRDODGE) f->vel.x = approach(f->vel.x, 0, f->p.air_friction);
     }
 
     /* Landung auf Oberkanten */
@@ -556,6 +560,13 @@ static void check_blastzones(Game *g)
 
 /* ---------- öffentliche API ---------- */
 
+bool fighter_intangible(const Fighter *f)
+{
+    if (f->invuln > 0) return true;
+    return f->state == ST_AIRDODGE && f->state_frame + 1 >= AIRDODGE_INTANG_FROM &&
+           f->state_frame + 1 <= AIRDODGE_INTANG_TO;
+}
+
 void game_init(Game *g, int stage_index, const CharId chars[MAX_FIGHTERS])
 {
     memset(g, 0, sizeof(*g));
@@ -603,7 +614,7 @@ void game_step(Game *g, const Input inputs[MAX_FIGHTERS])
         Fighter *a = &g->f[i], *t = &g->f[1 - i];
         Vec2 c; float r;
         if (a->attack_hit || !fighter_hitbox(a, &c, &r)) continue;
-        if (t->state == ST_DEAD || t->invuln > 0) continue;
+        if (t->state == ST_DEAD || fighter_intangible(t)) continue;
         if (circle_hits_body(c, r, t)) apply_hit(a, t);
     }
 

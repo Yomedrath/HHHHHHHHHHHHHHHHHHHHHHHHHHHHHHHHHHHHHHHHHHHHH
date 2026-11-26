@@ -74,6 +74,82 @@ static void test_wavedash(void)
     CHECK(s == ST_LANDING && vx > 1.0f && dist > 15.0f, "Wavedash rutscht nicht");
 }
 
+/* Fighter hoch in die Luft setzen und einen Airdodge mit gegebenem Stick auslösen */
+static Fighter *dodge_setup(Game *g, float sx, float sy)
+{
+    CharId cs[2] = { CHAR_FUCHS, CHAR_BIRDIE };
+    game_init(g, 1, cs);
+    Fighter *f = &g->f[0];
+    f->pos.x = 0; f->pos.y = 100; f->vel.x = 1.0f; f->vel.y = 2.0f;
+    Input d = { 0 }; d.shield = true; d.stick_x = sx; d.stick_y = sy;
+    run(g, d, NONE, 1);
+    return f;
+}
+
+static void test_airdodge(void)
+{
+    Game g;
+    /* neutral: Bewegung wird gestoppt, Schweben ohne Schwerkraft bis Frame 29 */
+    Fighter *f = dodge_setup(&g, 0, 0);
+    float y0 = f->pos.y;
+    CHECK(f->state == ST_AIRDODGE && f->vel.x == 0 && f->vel.y == 0, "Neutral-Airdodge stoppt Momentum nicht");
+    run(&g, NONE, NONE, 27);
+    CHECK(fabsf(f->pos.y - y0) < 0.01f, "Neutral-Airdodge schwebt nicht (dy %.2f)", f->pos.y - y0);
+    run(&g, NONE, NONE, 3);
+    CHECK(f->pos.y < y0, "nach Frame 29 setzt Schwerkraft nicht ein");
+
+    /* Deadzone: kleiner Stick -> auf der Stelle */
+    f = dodge_setup(&g, 0.2f, 0.2f);
+    CHECK(f->vel.x == 0 && f->vel.y == 0, "Deadzone ignoriert");
+
+    /* Richtung: halber Stick nach rechts = volle Kraft (nur der Winkel zählt) */
+    f = dodge_setup(&g, 0.5f, 0.0f);
+    float x0 = 0;                                  /* Startpunkt vor dem Airdodge-Frame */
+    run(&g, NONE, NONE, 40);
+    float expect = 0;
+    for (int i = 1; i <= 29; i++) expect += 3.1f * powf(0.9f, (float)i);
+    printf("  Airdodge rechts: Strecke %.2f (Melee-Modell %.2f + Restdrift), Zustand %s\n", f->pos.x - x0, expect,
+           state_name(f->state));
+    CHECK(fabsf((f->pos.x - x0) - expect) < 2.0f, "Airdodge-Strecke weicht ab");
+
+    /* Unverwundbarkeit Frame 4..29, Länge 49, danach Freefall */
+    f = dodge_setup(&g, 0, 0);
+    int first = -1, last = -1, frame = 1;
+    while (f->state == ST_AIRDODGE && frame < 80) {
+        if (fighter_intangible(f)) { if (first < 0) first = frame; last = frame; }
+        run(&g, NONE, NONE, 1);
+        frame++;
+    }
+    printf("  Airdodge: unverwundbar %d-%d, Freefall ab Frame %d\n", first, last, frame);
+    CHECK(first == 4 && last == 29 && frame == 50 && f->state == ST_FREEFALL,
+          "Airdodge-Timing falsch (%d-%d, Ende %d)", first, last, frame);
+}
+
+static void test_replay(void)
+{
+    Game a, b; CharId cs[2] = { CHAR_ASSASSIN, CHAR_DUELIST };
+    game_init(&a, 5, cs);
+    CpuState c0, c1; cpu_init(&c0, 5); cpu_init(&c1, 6);
+    Replay r; replay_init(&r, 5, cs);
+    while (!a.over && a.frame < 60 * 60 * 8) {
+        Input in[2] = { input_quantize(cpu_think(&c0, &a, 0)), input_quantize(cpu_think(&c1, &a, 1)) };
+        replay_push(&r, in);
+        game_step(&a, in);
+    }
+    CHECK(replay_save(&r, "test_replay.p1v1r"), "Replay speichern fehlgeschlagen");
+    Replay l;
+    CHECK(replay_load(&l, "test_replay.p1v1r"), "Replay laden fehlgeschlagen");
+    game_init(&b, l.stage, l.chars);
+    for (int i = 0; i < l.nframes; i++) { Input in[2]; replay_get(&l, i, in); game_step(&b, in); }
+    bool same = a.frame == b.frame && a.winner == b.winner &&
+                a.f[0].pos.x == b.f[0].pos.x && a.f[1].pos.y == b.f[1].pos.y &&
+                a.f[0].percent == b.f[0].percent;
+    printf("  Replay: %d Frames, identisch: %s\n", l.nframes, same ? "ja" : "NEIN");
+    CHECK(same, "Replay nicht deterministisch");
+    replay_free(&r); replay_free(&l);
+    remove("test_replay.p1v1r");
+}
+
 static void test_ledge(void)
 {
     Game g; CharId cs[2] = { CHAR_DUELIST, CHAR_BIRDIE };
@@ -137,6 +213,8 @@ int main(void)
     test_jumps(CHAR_DUELIST, 35.09f, 13.995f);
     printf("Techniken\n");
     test_wavedash();
+    test_airdodge();
+    test_replay();
     test_ledge();
     test_hit();
     printf("Autonome Matches\n");

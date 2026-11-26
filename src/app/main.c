@@ -1,8 +1,12 @@
 /* proto1v1 – SDL3-Frontend: Menü, Eingabe (Tastatur / Gamepad / GC-Adapter), Platzhalter-Grafik.
  *
- * Aufruf:  proto1v1                         normales Spiel
- *          proto1v1 --screenshot out.bmp [--stage N] [--frames N] [--p1 C] [--p2 C]
- *                                           CPU-vs-CPU ohne Fenster laufen lassen und Bild speichern
+ * Aufruf:  proto1v1                              normales Spiel (Replays landen in replays/)
+ *          proto1v1 datei.p1v1r                  Replay im Fenster abspielen (auch per Drag & Drop)
+ *          proto1v1 --video out.mp4 [--replay datei.p1v1r]
+ *                                                Video rendern (braucht ffmpeg im PATH);
+ *                                                ohne --replay: CPU gegen CPU
+ *          proto1v1 --screenshot out.bmp         Einzelbild
+ *          Optionen ohne Replay: --stage 1..6 --p1 0..3 --p2 0..3 --frames N
  */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -11,6 +15,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "game.h"
+
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#define PIPE_MODE "wb"
+#else
+#define PIPE_MODE "w"
+#endif
 
 #define WIN_W 1280
 #define WIN_H 720
@@ -303,40 +315,128 @@ static const char *arg_str(int argc, char **argv, const char *name)
     return NULL;
 }
 
-static int screenshot_mode(const char *path, int stage, int frames, CharId c0, CharId c1)
+static void draw_result_overlay(SDL_Renderer *r, int w, int h, const Game *g, const char *hint)
 {
-    SDL_Surface *surf = SDL_CreateSurface(WIN_W, WIN_H, SDL_PIXELFORMAT_XRGB8888);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "P%d (%s) GEWINNT!", g->winner + 1, g->f[g->winner].p.name);
+    set_color(r, 0xFFD040, 255);
+    text_center(r, (float)w * 0.5f, (float)h * 0.35f, 4, buf);
+    if (hint) {
+        set_color(r, 0xFFFFFF, 255);
+        text_center(r, (float)w * 0.5f, (float)h * 0.35f + 50, 2, hint);
+    }
+}
+
+/* Ohne Fenster rendern: Einzelbild (BMP) oder Video (ffmpeg über Pipe). */
+static int render_offline(const char *shot, const char *video, const Replay *rp,
+                          int stage, int max_frames, CharId c0, CharId c1)
+{
+    SDL_Surface *surf = SDL_CreateSurface(WIN_W, WIN_H, SDL_PIXELFORMAT_ARGB8888);
     SDL_Renderer *r = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
     if (!r) { fprintf(stderr, "Renderer: %s\n", SDL_GetError()); return 1; }
-    Game g; CharId cs[2] = { c0, c1 };
+
+    Game g;
+    CharId cs[2] = { c0, c1 };
+    if (rp) { stage = rp->stage; cs[0] = rp->chars[0]; cs[1] = rp->chars[1]; }
     game_init(&g, stage, cs);
     CpuState a, b; cpu_init(&a, 7); cpu_init(&b, 1234);
     Camera cam = { 0 };
-    for (int i = 0; i < frames && !g.over; i++) {
-        Input in[2] = { cpu_think(&a, &g, 0), cpu_think(&b, &g, 1) };
-        game_step(&g, in);
-        update_camera(&cam, &g, WIN_W, WIN_H, false);
+
+    FILE *pipe = NULL;
+    if (video) {
+        char cmd[1024];
+        snprintf(cmd, sizeof(cmd),
+                 "ffmpeg -loglevel error -y -f rawvideo -pixel_format bgra -video_size %dx%d -framerate 60 -i - "
+                 "-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p \"%s\"", WIN_W, WIN_H, video);
+        pipe = popen(cmd, PIPE_MODE);
+        if (!pipe) {
+            fprintf(stderr, "ffmpeg konnte nicht gestartet werden (installiert und im PATH?)\n");
+            SDL_DestroyRenderer(r);
+            SDL_DestroySurface(surf);
+            return 1;
+        }
     }
-    draw_match(r, WIN_W, WIN_H, &g, &cam, true);
-    SDL_RenderPresent(r);
-    bool ok = SDL_SaveBMP(surf, path);
-    printf("%s: %s (Frame %d, %s)\n", ok ? "gespeichert" : "Fehler", path, g.frame, g.stage->name);
+
+    int limit = rp ? rp->nframes : max_frames;
+    int tail = 0;                                   /* Frames nach Spielende (Siegerbild) */
+    while (g.frame < limit && tail < 120) {
+        if (g.over) tail++;
+        else {
+            Input in[2];
+            if (rp) replay_get(rp, g.frame, in);
+            else { in[0] = input_quantize(cpu_think(&a, &g, 0)); in[1] = input_quantize(cpu_think(&b, &g, 1)); }
+            game_step(&g, in);
+        }
+        update_camera(&cam, &g, WIN_W, WIN_H, false);
+        if (pipe) {
+            draw_match(r, WIN_W, WIN_H, &g, &cam, false);
+            if (g.over) draw_result_overlay(r, WIN_W, WIN_H, &g, NULL);
+            SDL_RenderPresent(r);
+            for (int y = 0; y < WIN_H; y++)
+                fwrite((const uint8_t *)surf->pixels + (size_t)y * (size_t)surf->pitch, 4, WIN_W, pipe);
+        }
+        if (!video && g.over) break;
+    }
+
+    int rc = 0;
+    if (pipe) {
+        rc = pclose(pipe) == 0 ? 0 : 1;
+        printf("%s: %s (%d Frames, %s)\n", rc == 0 ? "Video gespeichert" : "ffmpeg-Fehler", video, g.frame,
+               g.stage->name);
+    }
+    if (shot) {
+        draw_match(r, WIN_W, WIN_H, &g, &cam, true);
+        SDL_RenderPresent(r);
+        bool ok = SDL_SaveBMP(surf, shot);
+        printf("%s: %s (Frame %d, %s)\n", ok ? "gespeichert" : "Fehler", shot, g.frame, g.stage->name);
+        if (!ok) rc = 1;
+    }
     SDL_DestroyRenderer(r);
     SDL_DestroySurface(surf);
-    return ok ? 0 : 1;
+    return rc;
+}
+
+/* Replay unter replays/proto_JJJJMMTT_HHMMSS.p1v1r ablegen */
+static bool save_replay(const Replay *rp, char *out, size_t outlen)
+{
+    if (rp->nframes < 60) return false;
+    SDL_CreateDirectory("replays");
+    SDL_Time t; SDL_DateTime dt;
+    if (!SDL_GetCurrentTime(&t) || !SDL_TimeToDateTime(t, &dt, true)) return false;
+    snprintf(out, outlen, "replays/proto_%04d%02d%02d_%02d%02d%02d.p1v1r",
+             dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+    return replay_save(rp, out);
+}
+
+static bool ends_with(const char *s, const char *suf)
+{
+    size_t a = strlen(s), b = strlen(suf);
+    return a >= b && strcmp(s + a - b, suf) == 0;
 }
 
 /* ---------------- Hauptprogramm ---------------- */
 
-typedef enum { SCR_MENU, SCR_MATCH, SCR_PAUSE, SCR_RESULT } Screen;
+typedef enum { SCR_MENU, SCR_MATCH, SCR_PAUSE, SCR_RESULT, SCR_REPLAY } Screen;
 
 int main(int argc, char **argv)
 {
     const char *shot = arg_str(argc, argv, "--screenshot");
-    if (shot) {
+    const char *video = arg_str(argc, argv, "--video");
+    const char *replay_path = arg_str(argc, argv, "--replay");
+    if (!replay_path && argc >= 2 && ends_with(argv[1], ".p1v1r")) replay_path = argv[1];
+
+    Replay play = { 0 };
+    if (replay_path && !replay_load(&play, replay_path)) {
+        fprintf(stderr, "Replay kann nicht gelesen werden: %s\n", replay_path);
+        return 1;
+    }
+    if (shot || video) {
         if (!SDL_Init(0)) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
-        int rc = screenshot_mode(shot, arg_int(argc, argv, "--stage", 1) - 1, arg_int(argc, argv, "--frames", 600),
-                                 (CharId)arg_int(argc, argv, "--p1", 0), (CharId)arg_int(argc, argv, "--p2", 1));
+        int rc = render_offline(shot, video, replay_path ? &play : NULL,
+                                arg_int(argc, argv, "--stage", 1) - 1,
+                                arg_int(argc, argv, "--frames", video ? 60 * 60 * 8 : 600),
+                                (CharId)arg_int(argc, argv, "--p1", 0), (CharId)arg_int(argc, argv, "--p2", 1));
+        replay_free(&play);
         SDL_Quit();
         return rc;
     }
@@ -361,6 +461,12 @@ int main(int argc, char **argv)
     Camera cam = { 0 };
     CpuState cpu;
     Input last_nav = { 0 };
+    Replay rec = { 0 };
+    char saved_msg[160] = "";
+    if (replay_path) {
+        game_init(&game, play.stage, play.chars);
+        screen = SCR_REPLAY;
+    }
     bool debug = false;
     bool running = true;
     Uint64 prev = SDL_GetTicksNS();
@@ -387,8 +493,14 @@ int main(int argc, char **argv)
                 if (e.key.repeat) break;
                 if (e.key.scancode == SDL_SCANCODE_F1) debug = !debug;
                 if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
-                    if (screen == SCR_MENU) running = false;
-                    else screen = SCR_MENU;
+                    if (screen == SCR_MENU || screen == SCR_REPLAY) running = false;
+                    else {
+                        if (screen == SCR_MATCH || screen == SCR_PAUSE) {
+                            char path[128];
+                            if (save_replay(&rec, path, sizeof(path))) SDL_Log("Replay gespeichert: %s", path);
+                        }
+                        screen = SCR_MENU;
+                    }
                 }
                 break;
             default: break;
@@ -433,6 +545,9 @@ int main(int argc, char **argv)
                 }
                 if (ok && (menu.row == ROW_START || start)) {
                     game_init(&game, menu.stage, menu.chars);
+                    replay_free(&rec);
+                    replay_init(&rec, menu.stage, menu.chars);
+                    saved_msg[0] = 0;
                     cpu_init(&cpu, (uint32_t)SDL_GetTicks() | 1u);
                     cam.init = false;
                     screen = SCR_MATCH;
@@ -443,13 +558,31 @@ int main(int argc, char **argv)
                 if (start) { screen = SCR_PAUSE; break; }
                 if (menu.p2_cpu) p[1] = cpu_think(&cpu, &game, 1);
                 p[0].start = p[1].start = false;
+                p[0] = input_quantize(p[0]);
+                p[1] = input_quantize(p[1]);
+                replay_push(&rec, p);
                 game_step(&game, p);
                 update_camera(&cam, &game, w, h, false);
-                if (game.over) screen = SCR_RESULT;
+                if (game.over) {
+                    char path[128];
+                    if (save_replay(&rec, path, sizeof(path)))
+                        snprintf(saved_msg, sizeof(saved_msg), "Replay: %s", path);
+                    screen = SCR_RESULT;
+                }
+                break;
+            case SCR_REPLAY:
+                replay_get(&play, game.frame, p);
+                game_step(&game, p);
+                update_camera(&cam, &game, w, h, false);
+                if (game.over || game.frame >= play.nframes) screen = SCR_RESULT;
                 break;
             case SCR_PAUSE:
                 if (start) screen = SCR_MATCH;
-                else if (back) screen = SCR_MENU;
+                else if (back) {
+                    char path[128];
+                    if (save_replay(&rec, path, sizeof(path))) SDL_Log("Replay gespeichert: %s", path);
+                    screen = SCR_MENU;
+                }
                 break;
             case SCR_RESULT:
                 if (ok) screen = SCR_MENU;
@@ -465,18 +598,20 @@ int main(int argc, char **argv)
                 set_color(ren, 0xFFFFFF, 255);
                 text_center(ren, (float)w * 0.5f, (float)h * 0.35f, 5, "PAUSE");
                 text_center(ren, (float)w * 0.5f, (float)h * 0.35f + 60, 2, "Start = weiter, B/Esc = Menue");
+            } else if (screen == SCR_REPLAY) {
+                set_color(ren, 0xFF5050, 255);
+                text(ren, (float)w - 120, 10, 2, "REPLAY");
             } else if (screen == SCR_RESULT) {
-                char buf[64];
-                snprintf(buf, sizeof(buf), "P%d (%s) GEWINNT!", game.winner + 1, game.f[game.winner].p.name);
-                set_color(ren, 0xFFD040, 255);
-                text_center(ren, (float)w * 0.5f, (float)h * 0.35f, 4, buf);
-                set_color(ren, 0xFFFFFF, 255);
-                text_center(ren, (float)w * 0.5f, (float)h * 0.35f + 50, 2, "A / Start = Menue");
+                if (game.winner >= 0) draw_result_overlay(ren, w, h, &game, "A / Start = Menue");
+                set_color(ren, 0xA0A0A0, 255);
+                if (saved_msg[0]) text_center(ren, (float)w * 0.5f, (float)h * 0.35f + 80, 1.5f, saved_msg);
             }
         }
         SDL_RenderPresent(ren);
     }
 
+    replay_free(&rec);
+    replay_free(&play);
     for (int i = 0; i < MAX_PADS; i++) if (dev.pads[i]) SDL_CloseGamepad(dev.pads[i]);
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);

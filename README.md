@@ -1,7 +1,7 @@
 # proto1v1
 
-Eigenständiger 1-gegen-1-Prototyp mit Melee-artiger Bewegung, vier Kämpfern und den fünf
-neutralen Stage-Layouts. Die Grafik besteht aus Platzhaltern (Rechtecke). Es werden **keine Assets,
+Eigenständiger 1-gegen-1-Prototyp mit Melee-artiger Bewegung, vier Kämpfern und sechs
+Stage-Layouts (die fünf neutralen plus Pokémon Stadium). Die Grafik besteht aus Platzhaltern (Rechtecke). Es werden **keine Assets,
 kein ISO und kein Code aus dem Spiel** verwendet, nur öffentlich dokumentierte Zahlenwerte.
 Läuft unter Windows, Linux und macOS und baut mit GCC, Clang oder MSVC.
 
@@ -32,9 +32,22 @@ Jab, Strong und Nair mit eigenen Werten.
 
 ## Stages
 
-BF-, FD-, YS-, DL- und FoD-Layout mit gemessenen Kantenpositionen, Plattformhöhen und -breiten und
-Blastzones. Die FoD-Seitenplattformen stehen fest. Die Unterseiten der Hauptplattformen sind
-vereinfacht.
+BF-, FD-, YS-, DL-, FoD- und PS-Layout mit gemessenen Kantenpositionen, Plattformhöhen und
+-breiten und Blastzones. Die FoD-Seitenplattformen stehen fest. PS gibt es nur in der Standardform
+ohne Verwandlungen („frozen“). Die Unterseiten der Hauptplattformen sind vereinfacht.
+
+## Airdodge (wie Melee)
+
+Die Logik folgt `ftCo_EscapeAir` aus dem Melee-Decomp:
+- **Momentum:** Das alte Momentum wird komplett ersetzt.
+- **Deadzone:** Bleiben |x| und |y| des Sticks unter 0.2875, bleibst du auf der Stelle.
+- **Richtung:** Sonst fliegst du mit 3.1 in Stick-Richtung. Nur der Winkel zählt, nicht die Auslenkung.
+- **Bremsen:** Bis Frame 29 wird jeden Frame mit 0.9 multipliziert, ohne Schwerkraft. Danach greift
+  die normale Luftphysik.
+- **Unverwundbar:** Frame 4–29.
+- **Dauer:** 49 Frames, danach bist du hilflos (Freefall). Kanten greifst du erst nach Ende der
+  Animation.
+- **Landung:** Landest du während des Airdodge, folgen 10 Frames Landing Lag (Wavedash/Waveland).
 
 ## Steuerung
 
@@ -52,6 +65,17 @@ Funktionen: Dash, Dashdance, Run, Turn, Crouch, Short Hop und Full Hop, Doppelsp
 Airdodge, Wavedash, Waveland, Plattform-Drop, Ledge-Grab mit Getup und Ledge-Jump, Knockback mit
 Hitstun, KOs und 4 Stocks.
 
+## Replays und Videos
+
+- **Replays:** Jedes Match wird automatisch als Replay in `replays/` gespeichert, wenige KB pro
+  Match. Die Simulation ist deterministisch, deshalb reichen die Eingaben.
+- **Replay ansehen:** Die `.p1v1r`-Datei auf `proto1v1` ziehen oder `proto1v1 datei.p1v1r` aufrufen.
+- **Video:** `proto1v1 --video match.mp4 --replay replays/<datei>.p1v1r` rendert ein MP4 in
+  1280×720 mit 60 fps. Dafür muss [ffmpeg](https://ffmpeg.org) im PATH liegen.
+- **Video ohne Replay:** Ohne `--replay` wird ein CPU-gegen-CPU-Match gerendert, mit
+  `--stage 1..6 --p1 0..3 --p2 0..3`.
+- **Live aufnehmen:** Das geht natürlich auch mit OBS.
+
 ### GameCube-Adapter (offizieller / Mayflash im Wii-U-Modus)
 - **Windows:** Den WinUSB-Treiber mit Zadig installieren, genau wie für Dolphin.
 - **Linux:** Die udev-Regel aus der Dolphin-Doku einrichten, damit der Adapter ohne root lesbar ist.
@@ -67,11 +91,13 @@ ctest --test-dir build -C Release                # Headless-Physiktests
 ```
 
 Ohne Fenster lässt sich ein Bild rendern:
-`proto1v1 --screenshot out.bmp --stage 1..5 --frames 600 --p1 0..3 --p2 0..3`.
+`proto1v1 --screenshot out.bmp --stage 1..6 --frames 600 --p1 0..3 --p2 0..3`.
 
 ## Aufbau
 
 - `src/core/`: Simulation ohne Abhängigkeiten (fester 60-Hz-Takt, deterministisch)
 - `src/app/main.c`: SDL3-Frontend (Fenster, Eingabe, Platzhalter-Grafik, Menü)
-- `tests/sim_test.c`: prüft Sprunghöhen gegen die Melee-Werte, Wavedash, Ledge, Treffer und
+- `src/core/replay.c`: Input-Replays
+- `tests/sim_test.c`: prüft Sprunghöhen gegen die Melee-Werte, den Airdodge (Deadzone, Strecke,
+  Unverwundbarkeit, Dauer), Wavedash, Ledge, Treffer, ob Replays deterministisch sind, und
   komplette CPU-gegen-CPU-Matches auf allen Stages

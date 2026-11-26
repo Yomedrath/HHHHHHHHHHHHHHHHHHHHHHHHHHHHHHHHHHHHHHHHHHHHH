@@ -42,6 +42,12 @@ static const Stage STAGES[NUM_STAGES] = {
         4, -198.75f, 198.75f, 202.5f, -146.25f,
         { { -35.0f, 30 }, { 35.0f, 30 } },
     },
+    {   /* Pokémon-Stadium-Layout, nur die Standardform ("frozen", ohne Verwandlungen) */
+        "PS-Layout",
+        { SOLID(-87.75f, 87.75f, 0, -40), PLAT(-55.0f, -25.0f, 25.0f), PLAT(25.0f, 55.0f, 25.0f) },
+        3, -230.0f, 230.0f, 180.0f, -111.0f,
+        { { -45.0f, 30 }, { 45.0f, 30 } },
+    },
 };
 
 const Stage *stage_get(int index)

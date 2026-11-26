@@ -14,7 +14,8 @@ add_library(core STATIC
   src/core/fighter.c
   src/core/stage.c
   src/core/game.c
-  src/core/cpu.c)
+  src/core/cpu.c
+  src/core/replay.c)
 target_include_directories(core PUBLIC src/core)
 if(NOT MSVC)
   target_link_libraries(core PUBLIC m)

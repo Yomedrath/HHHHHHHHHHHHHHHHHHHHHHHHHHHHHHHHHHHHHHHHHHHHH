@@ -78,10 +78,7 @@ FighterParams fighter_params(CharId c)
     p.shorthop = jump_velocity(r->shorthop_h, r->gravity);
     p.djump = jump_velocity(r->djump_h, r->gravity);
     p.max_jumps = 2;
-    p.airdodge_speed = 3.1f;
-    p.airdodge_frames = 30;
     p.land_lag = r->land_lag;
-    p.wavedash_lag = 10;
     p.width = r->width;
     p.height = r->height;
     p.weight = r->weight;
