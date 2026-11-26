@@ -150,6 +150,24 @@ Filtern. Ein Übersichtsvideo liegt unter [`docs/alle_techniken.mp4`](docs/alle_
 Neu erzeugen oder um eigene Replays erweitern:
 `slp_techniques data/techniques <alle .slp-Dateien> --video`
 
+### Charakter-Attribute aus Replays messen
+
+`tools/measure_attributes.py` bestimmt Attribute direkt aus Slippi-Replays, über die Positionsänderung
+pro Frame. Das funktioniert auch mit alten Replays ohne gespeicherte Geschwindigkeiten.
+- **Messbar:** Jumpsquat, Startgeschwindigkeiten von Full Hop, Short Hop und Doppelsprung,
+  Gravitation, Fall- und Fastfall-Speed, Luftbeschleunigung, Luftreibung, Run, Traction, Dash
+  und normaler Landing Lag.
+- **Methode:** Jeder Wert ist der häufigste Messwert über alle passenden Frames.
+
+```sh
+pip install py-slippi
+python3 tools/measure_attributes.py data/replays/*.slp
+```
+
+Aus den 22 Replays ergeben sich so Werte für Fox, Falco, Falcon, Marth, Sheik, DK und Pikachu. Die
+Sprung- und Dash-Werte der Engine stammen direkt aus dieser Messung. Die übrigen Werte stimmen mit
+den dokumentierten Attributen überein.
+
 ## Replays und Videos
 
 - **Replays:** Jedes Match wird automatisch als Replay in `replays/` gespeichert, wenige KB pro

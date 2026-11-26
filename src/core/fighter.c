@@ -77,25 +77,22 @@ typedef struct {
     float weight, dash_init, run, walk, traction, air_friction, air_speed;
     float accel_base, accel_add, gravity, fall, fastfall;
     int jumpsquat;
-    float jump_h, shorthop_h, djump_h;
+    float fullhop_v, shorthop_v, djump_v;   /* Startgeschwindigkeiten, aus Slippi-Replays gemessen */
     int land_lag;
     float width, height;
     uint32_t color;
 } CharRow;
 
+/* Quellen: SmashWiki-Attribute; mit tools/measure_attributes.py gegen 22 Slippi-Replays geprüft
+ * (Gravitation, Fall/Fastfall, Jumpsquat, Sprung-Startgeschwindigkeiten, Traction, Luftreibung,
+ * Dash, Landing Lag stimmen exakt). Sprung- und Dash-Werte sind direkt gemessen. */
 static const CharRow CHARS[NUM_CHARS] = {
-    /*               wt  dash  run  walk  trac  airfr  airsp  acc_b acc_a  grav   fall ff   js  jump   SH      DJ     ll  w    h     color */
-    { "Fuchs",       75, 1.9f, 2.2f, 1.6f, 0.08f, 0.02f,  0.83f, 0.02f, 0.06f, 0.23f,  2.8f, 3.4f, 3, 31.28f, 10.65f, 40.204f, 4, 6.5f, 12.0f, 0xE08A2Eu },
-    { "Birdie",     104, 2.0f, 2.3f, 0.85f,0.08f, 0.01f,  1.12f, 0.02f, 0.04f, 0.13f,  2.9f, 3.5f, 4, 38.52f, 14.85f, 28.56f,  4, 8.0f, 16.0f, 0x3355DD },
-    { "Assassin",    90, 1.7f, 1.8f, 1.2f, 0.08f, 0.04f,  0.80f, 0.02f, 0.04f, 0.12f,  2.13f,3.0f, 3, 34.08f, 20.16f, 38.0f,   4, 6.5f, 15.0f, 0x7A4FB5 },
-    { "Duelist",     87, 1.5f, 1.8f, 1.6f, 0.06f, 0.005f, 0.90f, 0.02f, 0.03f, 0.085f, 2.2f, 2.5f, 4, 35.09f, 13.995f,25.188f, 4, 7.0f, 16.0f, 0x2E9E6B },
+    /*               wt  dash   run  walk  trac  airfr  airsp  acc_b acc_a  grav   fall ff   js  FH-v  SH-v   DJ-v    ll  w    h     color */
+    { "Fuchs",       75, 1.9f,  2.2f, 1.6f, 0.08f, 0.02f,  0.83f, 0.02f, 0.06f, 0.23f,  2.8f, 3.4f, 3, 3.68f, 2.1f,  4.186f, 4, 6.5f, 12.0f, 0xE08A2Eu },
+    { "Birdie",     104, 2.0f,  2.3f, 0.85f,0.08f, 0.01f,  1.12f, 0.02f, 0.04f, 0.13f,  2.9f, 3.5f, 4, 3.1f,  1.9f,  2.66f,  4, 8.0f, 16.0f, 0x3355DD },
+    { "Assassin",    90, 1.68f, 1.8f, 1.2f, 0.08f, 0.04f,  0.80f, 0.02f, 0.04f, 0.12f,  2.13f,3.0f, 3, 2.8f,  2.14f, 2.96f,  4, 6.5f, 15.0f, 0x7A4FB5 },
+    { "Duelist",     87, 1.5f,  1.8f, 1.6f, 0.06f, 0.005f, 0.90f, 0.02f, 0.03f, 0.085f, 2.2f, 2.5f, 4, 2.4f,  1.5f,  2.027f, 4, 7.0f, 16.0f, 0x2E9E6B },
 };
-
-/* Höhe h bei diskreter Integration (erst Position, dann Schwerkraft): h ≈ v²/(2g) + v/2 */
-static float jump_velocity(float h, float g)
-{
-    return (-g + sqrtf(g * g + 8.0f * g * h)) * 0.5f;
-}
 
 FighterParams fighter_params(CharId c)
 {
@@ -109,9 +106,9 @@ FighterParams fighter_params(CharId c)
     p.run_max = r->run;
     p.ground_friction = r->traction;
     /* Dash-Beschleunigung bei vollem Stick, aus Slippi-Replays gemessen (Geschwindigkeit im 2. Dash-Frame
-     * minus Startgeschwindigkeit): Fox 0.12, Sheik 0.12, Falcon 0.16, Marth ~0.056.
+     * minus Startgeschwindigkeit, n = 88-2957 Messungen): Fox 0.12, Sheik 0.12, Falcon 0.158, Marth 0.0592.
      * Aufteilung Basis/Stickanteil 1:5 wie bei Fox (0.02 + 0.1 * |Stick|). */
-    static const float DASH_ACC_FULL[NUM_CHARS] = { 0.12f, 0.16f, 0.12f, 0.056f };
+    static const float DASH_ACC_FULL[NUM_CHARS] = { 0.12f, 0.158f, 0.12f, 0.0592f };
     /* Horizontaler Absprung-Schwung, per Regression aus 21 Slippi-Replays (n = 98-589 Sprünge je Charakter):
      * vx = Stick * a + Bodengeschwindigkeit * b, begrenzt auf den größten beobachteten Wert */
     static const float JUMP_H[NUM_CHARS][3] = {
@@ -133,9 +130,9 @@ FighterParams fighter_params(CharId c)
     p.fall_max = r->fall;
     p.fastfall = r->fastfall;
     p.jumpsquat = r->jumpsquat;
-    p.fullhop = jump_velocity(r->jump_h, r->gravity);
-    p.shorthop = jump_velocity(r->shorthop_h, r->gravity);
-    p.djump = jump_velocity(r->djump_h, r->gravity);
+    p.fullhop = r->fullhop_v;
+    p.shorthop = r->shorthop_v;
+    p.djump = r->djump_v;
     p.max_jumps = 2;
     p.land_lag = r->land_lag;
     p.width = r->width;
