@@ -55,7 +55,7 @@ static void test_jumps(CharId c, float expect_full, float expect_short)
 
 static void test_wavedash(void)
 {
-    Game g; CharId cs[2] = { CHAR_FUCHS, CHAR_BIRDIE };
+    Game g; CharId cs[2] = { CHAR_FUCHS, CHAR_BLEIFUSS };
     game_init(&g, 1, cs); settle(&g);
     float x0 = g.f[0].pos.x;
     Input jump = { 0 }; jump.jump = true;
@@ -77,7 +77,7 @@ static void test_wavedash(void)
 /* Fighter hoch in die Luft setzen und einen Airdodge mit gegebenem Stick auslösen */
 static Fighter *dodge_setup(Game *g, float sx, float sy)
 {
-    CharId cs[2] = { CHAR_FUCHS, CHAR_BIRDIE };
+    CharId cs[2] = { CHAR_FUCHS, CHAR_BLEIFUSS };
     game_init(g, 1, cs);
     Fighter *f = &g->f[0];
     f->pos.x = 0; f->pos.y = 100; f->vel.x = 1.0f; f->vel.y = 2.0f;
@@ -127,7 +127,7 @@ static void test_airdodge(void)
 
 static void test_replay(void)
 {
-    Game a, b; CharId cs[2] = { CHAR_ASSASSIN, CHAR_DUELIST };
+    Game a, b; CharId cs[2] = { CHAR_ASSASSINE, CHAR_DUELIST };
     game_init(&a, 5, cs);
     CpuState c0, c1; cpu_init(&c0, 5); cpu_init(&c1, 6);
     Replay r; replay_init(&r, 5, cs);
@@ -153,7 +153,7 @@ static void test_replay(void)
 /* Fuchs in Höhe y über FD, frei fallend */
 static Fighter *air_setup(Game *g, CharId c, float y)
 {
-    CharId cs[2] = { c, CHAR_BIRDIE };
+    CharId cs[2] = { c, CHAR_BLEIFUSS };
     game_init(g, 1, cs);
     g->f[1].pos.x = 200;                       /* Gegner aus dem Weg */
     g->f[1].pos.y = 0;
@@ -225,7 +225,7 @@ static void test_aerials(void)
 
 static void test_ledge(void)
 {
-    Game g; CharId cs[2] = { CHAR_DUELIST, CHAR_BIRDIE };
+    Game g; CharId cs[2] = { CHAR_DUELIST, CHAR_BLEIFUSS };
     game_init(&g, 0, cs);
     Fighter *f = &g.f[0];
     f->pos.x = g.stage->surf[0].x1 + 6.0f;     /* rechts neben der Kante */
@@ -242,7 +242,7 @@ static void test_ledge(void)
 
 static void test_hit(void)
 {
-    Game g; CharId cs[2] = { CHAR_BIRDIE, CHAR_FUCHS };
+    Game g; CharId cs[2] = { CHAR_BLEIFUSS, CHAR_FUCHS };
     game_init(&g, 1, cs); settle(&g);
     g.f[0].pos.x = 0; g.f[1].pos.x = 9; g.f[0].facing = 1;
     Input a = { 0 }; a.a = true; a.stick_x = 1.0f;
@@ -281,9 +281,10 @@ int main(void)
         for (int c = 0; c < NUM_CHARS; c++) test_landing(s, (CharId)c);
     printf("Sprunghöhen vs. Melee-Werte\n");
     test_jumps(CHAR_FUCHS, 31.28f, 10.65f);
-    test_jumps(CHAR_BIRDIE, 38.52f, 14.85f);
-    test_jumps(CHAR_ASSASSIN, 34.08f, 20.16f);
+    test_jumps(CHAR_BLEIFUSS, 38.52f, 14.85f);
+    test_jumps(CHAR_ASSASSINE, 34.08f, 20.16f);
     test_jumps(CHAR_DUELIST, 35.09f, 13.995f);
+    test_jumps(CHAR_BIRDIE, 51.5f, 11.58f);
     printf("Techniken\n");
     test_wavedash();
     test_airdodge();

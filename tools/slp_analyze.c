@@ -44,9 +44,10 @@ static int map_char(int ext)
 {
     switch (ext) {
     case 2: return CHAR_FUCHS;
-    case 0: return CHAR_BIRDIE;
-    case 19: return CHAR_ASSASSIN;
+    case 0: return CHAR_BLEIFUSS;
+    case 19: return CHAR_ASSASSINE;
     case 9: return CHAR_DUELIST;
+    case 20: return CHAR_BIRDIE;
     default: return -1;
     }
 }

@@ -70,7 +70,9 @@ typedef struct {
 
 #define LCANCEL_WINDOW 7                    /* L/R/Z bis zu 7 Frames vor der Landung */
 
-typedef enum { CHAR_FUCHS, CHAR_BIRDIE, CHAR_ASSASSIN, CHAR_DUELIST, NUM_CHARS } CharId;
+/* Reihenfolge nicht ändern (Replays speichern den Index). Vorbilder: Fuchs = Fox, Bleifuss = Captain Falcon,
+ * Assassine = Sheik, Duelist = Marth, Birdie = Falco */
+typedef enum { CHAR_FUCHS, CHAR_BLEIFUSS, CHAR_ASSASSINE, CHAR_DUELIST, CHAR_BIRDIE, NUM_CHARS } CharId;
 
 typedef struct {
     const char *name;

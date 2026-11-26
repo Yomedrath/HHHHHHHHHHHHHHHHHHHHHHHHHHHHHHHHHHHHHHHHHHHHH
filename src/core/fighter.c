@@ -26,19 +26,26 @@ static const AttackData AERIALS[NUM_CHARS][5] = {
         AER("dair", 49, 7, WIN({ 5, 6 }, { 8, 9 }, { 11, 12 }, { 14, 15 }, { 17, 18 }, { 20, 21 }, { 23, 24 }),
                                                                                     0, 4, 31, 18,  0, -1, 6,  3, 290, 1),
     },
-    [CHAR_BIRDIE] = {
+    [CHAR_BLEIFUSS] = {
         AER("nair", 44, 2, WIN({ 7, 12 }, { 20, 29 }),                              0, 3, 34, 15,  0, 8, 8,  7, 45, 1),
         AER("fair", 39, 1, WIN({ 14, 30 }),                                        36, 6, 35, 19,  8, 9, 6, 18, 40, 1),
         AER("bair", 35, 1, WIN({ 10, 17 }),                                        29, 6, 21, 18,  8, 9, 6, 14, 35, -1),
         AER("uair", 33, 1, WIN({ 6, 13 }),                                         30, 0, 22, 15,  0, 18, 7, 13, 85, 1),
         AER("dair", 44, 1, WIN({ 16, 20 }),                                        38, 3, 36, 24,  0, -1, 7, 16, 270, 1),
     },
-    [CHAR_ASSASSIN] = {
+    [CHAR_ASSASSINE] = {
         AER("nair", 48, 1, WIN({ 3, 30 }),                                         42, 2, 31, 16,  0, 8, 7, 14, 45, 1),
         AER("fair", 33, 1, WIN({ 5, 7 }),                                           0, 4, 11, 16,  7, 9, 6, 13, 40, 1),
         AER("bair", 38, 1, WIN({ 4, 19 }),                                          0, 3, 24, 16,  7, 8, 6, 14, 35, -1),
         AER("uair", 39, 1, WIN({ 5, 20 }),                                         37, 4, 30, 24,  0, 17, 6, 12, 85, 1),
         AER("dair", 48, 1, WIN({ 15, 33 }),                                         0, 2, 53, 20,  0, -1, 6, 11, 270, 1),
+    },
+    [CHAR_BIRDIE] = {   /* Falco */
+        AER("nair", 49, 1, WIN({ 4, 31 }),                                         42, 3, 37, 15,  0, 7, 7, 12, 45, 1),
+        AER("fair", 59, 5, WIN({ 6, 8 }, { 16, 18 }, { 24, 26 }, { 33, 35 }, { 43, 45 }), 53, 5, 49, 22, 6, 7, 6,  9, 45, 1),
+        AER("bair", 39, 1, WIN({ 4, 19 }),                                         38, 3, 23, 20,  7, 7, 6, 15, 35, -1),
+        AER("uair", 39, 2, WIN({ 8, 9 }, { 11, 14 }),                              36, 7, 26, 18,  0, 15, 6, 10, 85, 1),
+        AER("dair", 49, 1, WIN({ 5, 24 }),                                          0, 4, 30, 18,  0, -1, 6, 12, 270, 1),
     },
     [CHAR_DUELIST] = {
         AER("nair", 49, 2, WIN({ 6, 7 }, { 15, 21 }),                               0, 5, 25, 15,  0, 9, 10, 10, 45, 1),
@@ -69,7 +76,7 @@ const char *state_name(FState s)
 }
 
 /* Bewegungswerte nach öffentlich dokumentierten Melee-Attributen (SmashWiki, NTSC):
- * Fuchs = Fox, Birdie = Captain Falcon, Assassin = Sheik, Duelist = Marth.
+ * Fuchs = Fox, Bleifuss = Captain Falcon, Assassine = Sheik, Duelist = Marth, Birdie = Falco.
  * Sprunghöhen in Einheiten; Startgeschwindigkeit wird daraus berechnet.
  * walk_accel, width/height und Farben sind Platzhalter (nicht dokumentiert/geschätzt). */
 typedef struct {
@@ -89,9 +96,11 @@ typedef struct {
 static const CharRow CHARS[NUM_CHARS] = {
     /*               wt  dash   run  walk  trac  airfr  airsp  acc_b acc_a  grav   fall ff   js  FH-v  SH-v   DJ-v    ll  w    h     color */
     { "Fuchs",       75, 1.9f,  2.2f, 1.6f, 0.08f, 0.02f,  0.83f, 0.02f, 0.06f, 0.23f,  2.8f, 3.4f, 3, 3.68f, 2.1f,  4.186f, 4, 6.5f, 12.0f, 0xE08A2Eu },
-    { "Birdie",     104, 2.0f,  2.3f, 0.85f,0.08f, 0.01f,  1.12f, 0.02f, 0.04f, 0.13f,  2.9f, 3.5f, 4, 3.1f,  1.9f,  2.66f,  4, 8.0f, 16.0f, 0x3355DD },
-    { "Assassin",    90, 1.68f, 1.8f, 1.2f, 0.08f, 0.04f,  0.80f, 0.02f, 0.04f, 0.12f,  2.13f,3.0f, 3, 2.8f,  2.14f, 2.96f,  4, 6.5f, 15.0f, 0x7A4FB5 },
+    { "Bleifuss",   104, 2.0f,  2.3f, 0.85f,0.08f, 0.01f,  1.12f, 0.02f, 0.04f, 0.13f,  2.9f, 3.5f, 4, 3.1f,  1.9f,  2.66f,  4, 8.0f, 16.0f, 0xC0392B },
+    { "Assassine",   90, 1.68f, 1.8f, 1.2f, 0.08f, 0.04f,  0.80f, 0.02f, 0.04f, 0.12f,  2.13f,3.0f, 3, 2.8f,  2.14f, 2.96f,  4, 6.5f, 15.0f, 0x7A4FB5 },
     { "Duelist",     87, 1.5f,  1.8f, 1.6f, 0.06f, 0.005f, 0.90f, 0.02f, 0.03f, 0.085f, 2.2f, 2.5f, 4, 2.4f,  1.5f,  2.027f, 4, 7.0f, 16.0f, 0x2E9E6B },
+    /* Falco: Dash 1.70 = gemessene Frame-2-Geschwindigkeit 1.82 minus Beschleunigung 0.1188 */
+    { "Birdie",      80, 1.70f, 1.5f, 1.4f, 0.08f, 0.02f,  0.83f, 0.02f, 0.05f, 0.17f,  3.1f, 3.5f, 5, 4.1f,  1.9f,  3.684f, 4, 6.5f, 13.0f, 0x4A90E2 },
 };
 
 FighterParams fighter_params(CharId c)
@@ -108,7 +117,7 @@ FighterParams fighter_params(CharId c)
     /* Dash-Beschleunigung bei vollem Stick, aus Slippi-Replays gemessen (Geschwindigkeit im 2. Dash-Frame
      * minus Startgeschwindigkeit, n = 88-2957 Messungen): Fox 0.12, Sheik 0.12, Falcon 0.158, Marth 0.0592.
      * Aufteilung Basis/Stickanteil 1:5 wie bei Fox (0.02 + 0.1 * |Stick|). */
-    static const float DASH_ACC_FULL[NUM_CHARS] = { 0.12f, 0.158f, 0.12f, 0.0592f };
+    static const float DASH_ACC_FULL[NUM_CHARS] = { 0.12f, 0.158f, 0.12f, 0.0592f, 0.1188f };
     /* Horizontaler Absprung-Schwung, per Regression aus 21 Slippi-Replays (n = 98-589 Sprünge je Charakter):
      * vx = Stick * a + Bodengeschwindigkeit * b, begrenzt auf den größten beobachteten Wert */
     static const float JUMP_H[NUM_CHARS][3] = {
@@ -116,6 +125,7 @@ FighterParams fighter_params(CharId c)
         { 0.846f, 0.812f, 2.3f },   /* Falcon */
         { 0.620f, 0.701f, 1.4f },   /* Sheik */
         { 0.696f, 0.611f, 1.2f },   /* Marth */
+        { 0.535f, 1.198f, 1.7f },   /* Falco */
     };
     p.jump_h_stick = JUMP_H[c][0];
     p.jump_h_ground = JUMP_H[c][1];

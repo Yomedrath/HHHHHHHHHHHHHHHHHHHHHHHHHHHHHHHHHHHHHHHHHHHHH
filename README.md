@@ -23,8 +23,9 @@ und Fastfall-Speed, Jumpsquat sowie Full-Hop-, Short-Hop- und Doppelsprung-Höhe
 | Name | Vorbild |
 |---|---|
 | Fuchs | Fox |
-| Birdie | Captain Falcon |
-| Assassin | Sheik |
+| Birdie | Falco |
+| Bleifuss | Captain Falcon |
+| Assassine | Sheik |
 | Duelist | Marth |
 
 ### Aerials
@@ -93,9 +94,9 @@ Engine nach und vergleicht beide Ergebnisse Frame für Frame:
 slp_analyze replay.slp [--csv frames.csv] [--top 5]
 ```
 
-- **Unterstützt:** Fox, Falcon, Sheik und Marth auf BF, FD, YS, DL, FoD und PS, andere Ports werden
-  übersprungen. Fox wird als Fuchs nachgespielt, Falcon als Birdie, Sheik als Assassin, Marth als
-  Duelist.
+- **Unterstützt:** Fox, Falco, Falcon, Sheik und Marth auf BF, FD, YS, DL, FoD und PS, andere
+  Ports werden übersprungen. Fox wird als Fuchs nachgespielt, Falco als Birdie, Falcon als Bleifuss,
+  Sheik als Assassine und Marth als Duelist.
 - **Weg:** Wie weit sich der Kämpfer in der Szene bewegt, real und in der Engine.
 - **Abw. Ende / max:** Positionsabweichung am Ende der Szene und die größte über die ganze Szene.
 - **Zustand=:** Anteil der Frames, in denen die Engine dieselbe Aktion macht (Dash, Airdodge,
@@ -176,7 +177,7 @@ den dokumentierten Attributen überein.
 - **Video:** `proto1v1 --video match.mp4 --replay replays/<datei>.p1v1r` rendert ein MP4 in
   1280×720 mit 60 fps. Dafür muss [ffmpeg](https://ffmpeg.org) im PATH liegen.
 - **Video ohne Replay:** Ohne `--replay` wird ein CPU-gegen-CPU-Match gerendert, mit
-  `--stage 1..6 --p1 0..3 --p2 0..3`.
+  `--stage 1..6 --p1 0..4 --p2 0..4` (0 Fuchs, 1 Bleifuss, 2 Assassine, 3 Duelist, 4 Birdie).
 - **Live aufnehmen:** Das geht natürlich auch mit OBS.
 
 ### GameCube-Adapter (offizieller / Mayflash im Wii-U-Modus)
@@ -194,7 +195,7 @@ ctest --test-dir build -C Release                # Headless-Physiktests
 ```
 
 Ohne Fenster lässt sich ein Bild rendern:
-`proto1v1 --screenshot out.bmp --stage 1..6 --frames 600 --p1 0..3 --p2 0..3`.
+`proto1v1 --screenshot out.bmp --stage 1..6 --frames 600 --p1 0..4 --p2 0..4`.
 
 ## Aufbau
 

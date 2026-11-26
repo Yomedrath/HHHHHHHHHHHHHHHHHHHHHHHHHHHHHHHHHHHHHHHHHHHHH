@@ -6,7 +6,7 @@
  *                                                Video rendern (braucht ffmpeg im PATH);
  *                                                ohne --replay: CPU gegen CPU
  *          proto1v1 --screenshot out.bmp         Einzelbild
- *          Optionen ohne Replay: --stage 1..6 --p1 0..3 --p2 0..3 --frames N
+ *          Optionen ohne Replay: --stage 1..6 --p1 0..4 --p2 0..4 --frames N
  */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
