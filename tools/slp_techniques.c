@@ -120,6 +120,7 @@ typedef struct {
     bool surface_known;
     char note[96];
     char file[256];
+    int replay;
 } Event;
 
 typedef struct { Event *v; int n, cap; } List;
@@ -167,6 +168,7 @@ static void detect(const SlpGame *g, int port, List *out)
 {
     const SlpFrame *F = g->frames[port];
     int n = g->nframes;
+    bool spacie = g->ext_char[port] == 2 || g->ext_char[port] == 20;   /* Shine nur Fox/Falco */
     for (int k = 2; k < n - 2; k++) {
         int a = F[k].action, prev = F[k - 1].action;
 
@@ -176,9 +178,13 @@ static void detect(const SlpGame *g, int port, List *out)
                 /* rückwärts: Aerial, davor Short Hop (Sprungtaste vor Jumpsquat-Ende losgelassen) */
                 int j = k - 1;
                 while (j > 2 && is_aerial(F[j].action)) j--;
+                /* Fastfall an der Positionsänderung erkennen (ältere Replays haben keine Geschwindigkeiten):
+                 * die Fallgeschwindigkeit springt in einem Frame um mehr als 0.5 nach unten */
                 bool fastfall = false;
-                for (int q = j + 1; q < k; q++)
-                    if (F[q].self_y < F[q - 1].self_y - 0.5f) fastfall = true;
+                for (int q = j + 2; q < k; q++) {
+                    float v1 = F[q].y - F[q - 1].y, v0 = F[q - 1].y - F[q - 2].y;
+                    if (v1 < v0 - 0.5f && v1 < 0) fastfall = true;
+                }
                 int js = j;
                 while (js > 2 && (F[js].action == A_JUMPF || F[js].action == A_JUMPB)) js--;
                 if (F[js].action == A_KNEE && fastfall && k - js < 45) {
@@ -276,12 +282,23 @@ static void detect(const SlpGame *g, int port, List *out)
         }
 
         /* --- Shine-Techniken --- */
-        if (st(F, k, A_SHINE_GROUND)) {
-            int shines = 1, j = k, last = k;
-            while (j + 1 < n && j - last < 15) {
+        /* Multishine: Shine -> Jumpsquat -> (1-2 Sprungframes) -> Shine (am Boden oder knapp darüber) ...
+         * Der Jumpsquat lässt sich in Melee nicht mit Down-B unterbrechen, der Folge-Shine kommt im
+         * ersten Luftframe. */
+        if (spacie && st(F, k, A_SHINE_GROUND)) {
+            int shines = 1, j = k, last = k, jumpframes = 0;
+            while (j + 1 < n && j - last < 20) {
                 j++;
-                if (F[j].action == A_SHINE_GROUND && F[j - 1].action == A_KNEE) { shines++; last = j; }
-                else if (!(is_ground_shine(F[j].action) || F[j].action == A_KNEE)) break;
+                int aj = F[j].action;
+                if (is_shine(aj) && !is_shine(F[j - 1].action)) {
+                    if (F[j - 1].action == A_KNEE || F[j - 1].action == A_JUMPF || F[j - 1].action == A_JUMPB) {
+                        shines++;
+                        last = j;
+                        jumpframes = 0;
+                    } else break;
+                } else if (aj == A_JUMPF || aj == A_JUMPB) {
+                    if (++jumpframes > 2) break;
+                } else if (!(is_shine(aj) || aj == A_KNEE)) break;
             }
             if (shines >= 2) {
                 Event e = mk(T_MULTISHINE, port, k, end_of(F, n, last));
@@ -295,7 +312,7 @@ static void detect(const SlpGame *g, int port, List *out)
             int j = k - 1;
             while (j > 2 && k - j < 16 && (F[j].action == A_ESCAPEAIR || F[j].action == A_JUMPF ||
                                             F[j].action == A_JUMPB || F[j].action == A_KNEE)) j--;
-            if (is_shine(F[j].action) && k - j > 1) {
+            if (spacie && is_shine(F[j].action) && k - j > 1) {
                 int s = j;
                 while (s > 2 && is_shine(F[s - 1].action)) s--;
                 Event e = mk(T_WAVESHINE, port, s, end_of(F, n, k));
@@ -357,11 +374,30 @@ static const char *stage_short(int s)
     }
 }
 
+static int g_stage_for_label = 0;   /* Stage des gerade beschrifteten Events */
+
+/* Untergrund einordnen: Hauptplattform (inkl. Schrägen von YS, FoD bei 0.6) oder bekannte Plattform;
+ * bewegliche FoD-Seitenplattformen werden in 4er-Höhenstufen gruppiert. */
 static void surface_label(const Event *e, char *buf, size_t n)
 {
-    if (!e->surface_known) snprintf(buf, n, "Luft");
-    else if (fabsf(e->surface_y) < 0.5f) snprintf(buf, n, "Boden");
-    else snprintf(buf, n, "Plattform %.1f", e->surface_y);
+    static const struct { int stage; float y[2]; } P[] = {
+        { 31, { 27.2f, 54.4f } }, { 8, { 23.45f, 42.0f } }, { 28, { 30.13f, 51.42f } },
+        { 2, { 42.75f, 0 } }, { 3, { 25.0f, 0 } },
+    };
+    if (!e->surface_known) { snprintf(buf, n, "Luft"); return; }
+    float y = e->surface_y;
+    if (y < 5.0f) { snprintf(buf, n, "Boden"); return; }
+    for (size_t i = 0; i < sizeof(P) / sizeof(P[0]); i++) {
+        if (P[i].stage != g_stage_for_label) continue;
+        for (int k = 0; k < 2; k++)
+            if (P[i].y[k] > 0 && fabsf(y - P[i].y[k]) < 1.5f) { snprintf(buf, n, "Plattform %.1f", P[i].y[k]); return; }
+    }
+    if (g_stage_for_label == 2) {
+        int lo = (int)(y / 4.0f) * 4;
+        snprintf(buf, n, "Seitenplattform %d-%d", lo, lo + 4);
+        return;
+    }
+    snprintf(buf, n, "Plattform %.0f", y);
 }
 
 static void file_char(const char *s, char *out, size_t n)
@@ -491,6 +527,7 @@ static void render_event(SDL_Renderer *r, SDL_Surface *surf, FILE *pipe, const S
     c.scale = fminf(VW * 0.8f / wspan, VH * 0.6f / hspan);
 
     char title[160], sub[200], surfl[32];
+    g_stage_for_label = g->stage;
     surface_label(e, surfl, sizeof(surfl));
     snprintf(title, sizeof(title), "%s  (%d/%d)", TECH_NAME[e->tech], idx, total);
     snprintf(sub, sizeof(sub), "%s, Port %d, %s, %s | %s", slp_char_name(g->ext_char[e->port]), e->port + 1,
@@ -597,6 +634,8 @@ int main(int argc, char **argv)
             const SlpGame *g = &L[r].g;
             char ch[32], sl[32], sl2[32];
             file_char(slp_char_name(g->ext_char[e->port]), ch, sizeof(ch));
+            g_stage_for_label = L[r].g.stage;
+                    g_stage_for_label = g->stage;
             surface_label(e, sl, sizeof(sl));
             file_char(sl, sl2, sizeof(sl2));
             int nr = ++count[e->tech];
@@ -606,6 +645,26 @@ int main(int argc, char **argv)
             int b = e->end + 30 >= g->nframes ? g->nframes - 1 : e->end + 30;
             if (!slp_write_clip(g, a, b, path)) fprintf(stderr, "Clip fehlgeschlagen: %s\n", path);
         }
+    }
+
+    /* maschinenlesbarer Index */
+    snprintf(path, sizeof(path), "%s/index.csv", outdir);
+    FILE *ix = fopen(path, "w");
+    if (ix) {
+        fprintf(ix, "datei,technik,charakter,stage,untergrund,untergrund_y,replay,frame,notiz\n");
+        for (int r = 0; r < nl; r++)
+            for (int i = 0; i < ev[r].n; i++) {
+                Event *e = &ev[r].v[i];
+                char sl[32];
+                g_stage_for_label = L[r].g.stage;
+                    surface_label(e, sl, sizeof(sl));
+                const char *base = strrchr(L[r].name, '/');
+                fprintf(ix, "%s,%s,%s,%s,%s,%.2f,%s,%d,\"%s\"\n", e->file, TECH_ID[e->tech],
+                        slp_char_name(L[r].g.ext_char[e->port]), stage_short(L[r].g.stage), sl,
+                        e->surface_known ? e->surface_y : 0.0f, base ? base + 1 : L[r].name,
+                        e->start + SLP_FIRST_FRAME, e->note);
+            }
+        fclose(ix);
     }
 
     /* Übersicht */
@@ -624,12 +683,14 @@ int main(int argc, char **argv)
                     Event *e = &ev[r].v[i];
                     if (e->tech != (Tech)t) continue;
                     char sl[32];
+                    g_stage_for_label = L[r].g.stage;
                     surface_label(e, sl, sizeof(sl));
                     bool seen = false;
                     for (int r2 = 0; r2 <= r && !seen; r2++)
                         for (int j = 0; j < (r2 == r ? i : ev[r2].n); j++) {
                             Event *o = &ev[r2].v[j];
                             char sl3[32];
+                            g_stage_for_label = L[r2].g.stage;
                             surface_label(o, sl3, sizeof(sl3));
                             if (o->tech == e->tech && L[r2].g.ext_char[o->port] == L[r].g.ext_char[e->port] &&
                                 L[r2].g.stage == L[r].g.stage && strcmp(sl, sl3) == 0) { seen = true; break; }
@@ -640,6 +701,7 @@ int main(int argc, char **argv)
                         for (int j = 0; j < ev[r2].n; j++) {
                             Event *o = &ev[r2].v[j];
                             char sl3[32];
+                            g_stage_for_label = L[r2].g.stage;
                             surface_label(o, sl3, sizeof(sl3));
                             if (o->tech == e->tech && L[r2].g.ext_char[o->port] == L[r].g.ext_char[e->port] &&
                                 L[r2].g.stage == L[r].g.stage && strcmp(sl, sl3) == 0) cnt++;

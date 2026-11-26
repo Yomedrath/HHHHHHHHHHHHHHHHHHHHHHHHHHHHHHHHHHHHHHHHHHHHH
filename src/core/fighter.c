@@ -66,9 +66,12 @@ FighterParams fighter_params(CharId c)
     p.dash_init = r->dash_init;
     p.run_max = r->run;
     p.ground_friction = r->traction;
-    /* aus Slippi-Daten gemessen (Fox, Sheik: 0.12 bei vollem Stick); für Birdie/Duelist übernommen */
-    p.dash_accel_base = 0.02f;
-    p.dash_accel_add = 0.1f;
+    /* Dash-Beschleunigung bei vollem Stick, aus Slippi-Replays gemessen (Geschwindigkeit im 2. Dash-Frame
+     * minus Startgeschwindigkeit): Fox 0.12, Sheik 0.12, Falcon 0.16, Marth ~0.056.
+     * Aufteilung Basis/Stickanteil 1:5 wie bei Fox (0.02 + 0.1 * |Stick|). */
+    static const float DASH_ACC_FULL[NUM_CHARS] = { 0.12f, 0.16f, 0.12f, 0.056f };
+    p.dash_accel_base = DASH_ACC_FULL[c] / 6.0f;
+    p.dash_accel_add = DASH_ACC_FULL[c] * 5.0f / 6.0f;
     p.air_accel_base = r->accel_base;
     p.air_accel_add = r->accel_add;
     p.air_max = r->air_speed;

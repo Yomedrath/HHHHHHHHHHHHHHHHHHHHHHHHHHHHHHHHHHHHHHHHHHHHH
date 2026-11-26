@@ -156,6 +156,11 @@ static void simulate(const SlpGame *sg, Event *ev)
     if (f->state_frame < 0) f->state_frame = 0;
     f->vel.x = f->grounded ? s0->ground_x : s0->self_air_x;
     f->vel.y = f->grounded ? 0 : s0->self_y;
+    if (sg->version[0] < 3 || (sg->version[0] == 3 && sg->version[1] < 5)) {
+        /* vor Slippi 3.5 keine Geschwindigkeiten im Replay -> aus Positionsänderung schätzen */
+        f->vel.x = s0->x - fr[ev->start - 2].x;
+        f->vel.y = f->grounded ? 0 : s0->y - fr[ev->start - 2].y;
+    }
     f->jumps_left = s0->jumps_left;
     f->in = map_input(s0);
     f->stick_x_hist[0] = s0->stick_x;
