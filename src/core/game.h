@@ -18,6 +18,7 @@ typedef struct {
     float stick_x, stick_y;   /* -1..1, y nach oben */
     float cstick_x, cstick_y;
     bool a, b, jump, shield, z, start;
+    bool l, r;                /* digitale L/R einzeln (Melee wertet jede Taste als eigenen Druck) */
 } Input;
 
 typedef enum { SURF_SOLID, SURF_PLATFORM } SurfKind;
@@ -60,6 +61,7 @@ typedef enum { CHAR_FUCHS, CHAR_BIRDIE, CHAR_ASSASSIN, CHAR_DUELIST, NUM_CHARS }
 typedef struct {
     const char *name;
     float walk_max, walk_accel, dash_init, run_max, ground_friction;
+    float dash_accel_base, dash_accel_add;   /* Dash-Beschleunigung = base + add * |Stick| */
     float air_accel_base, air_accel_add, air_max, air_friction;
     float gravity, fall_max, fastfall;
     int jumpsquat;
@@ -77,12 +79,11 @@ typedef struct {
     int state_frame;
     Vec2 pos, vel, kb;          /* kb = Knockback-Geschwindigkeit (zerfällt) */
     int facing;                 /* +1 rechts, -1 links */
+    bool smash_turn;            /* Turn durch Smash-Eingabe -> danach automatisch Dash */
     bool grounded;
     int surface;                /* Index der Bodenfläche oder -1 */
     int jumps_left;
     bool fastfalling;
-    bool full_hop;              /* Sprungtaste in Jumpsquat gehalten */
-    bool buffered_airdodge;
     AttackId attack;
     bool attack_hit;
     int landing_lag;

@@ -7,6 +7,11 @@
 #define KB_DECAY 0.051f
 #define LEDGE_GETUP_FRAMES 24
 #define DASH_FRAMES 12
+/* Vereinfachte ECB: In der Luft liegt die Kollisions-Unterkante über den Füßen (Melee-Daten zeigen
+ * Füße bis knapp 3 Einheiten unter dem Boden vor der Landung). Wird nur für Boden/Plattformen benutzt. */
+#ifndef ECB_AIR_OFFSET
+#define ECB_AIR_OFFSET 3.0f
+#endif
 
 /* ---------- kleine Helfer ---------- */
 
@@ -22,7 +27,10 @@ static float approach(float v, float target, float step)
 static void set_state(Fighter *f, FState s) { f->state = s; f->state_frame = 0; }
 
 static bool pressed_a(const Fighter *f)      { return f->in.a && !f->prev.a; }
-static bool pressed_shield(const Fighter *f) { return f->in.shield && !f->prev.shield; }
+static bool pressed_shield(const Fighter *f)
+{
+    return (f->in.shield && !f->prev.shield) || (f->in.l && !f->prev.l) || (f->in.r && !f->prev.r);
+}
 static bool tap_up(const Fighter *f)    { return f->in.stick_y > 0.66f && f->prev.stick_y <= 0.66f; }
 static bool down_hard(const Fighter *f) { return f->in.stick_y < -0.66f && f->prev.stick_y >= -0.66f; }
 static bool jump_pressed(const Fighter *f) { return (f->in.jump && !f->prev.jump) || tap_up(f); }
@@ -36,7 +44,13 @@ static bool smash_x(const Fighter *f)
     return f->stick_x_hist[1] * d < 0.3f || f->stick_x_hist[2] * d < 0.3f;
 }
 
-static void ground_friction(Fighter *f) { f->vel.x = approach(f->vel.x, 0, f->p.ground_friction); }
+/* Melee: über der maximalen Gehgeschwindigkeit bremst der Boden doppelt so stark */
+static void ground_friction(Fighter *f)
+{
+    float t = f->p.ground_friction;
+    if (fabsf(f->vel.x) > f->p.walk_max) t *= 2.0f;
+    f->vel.x = approach(f->vel.x, 0, t);
+}
 
 static void air_drift(Fighter *f, float mult)
 {
@@ -83,20 +97,30 @@ static void start_airdodge(Fighter *f)
         f->vel.y = AIRDODGE_FORCE * sinf(ang);
     }
     f->fastfalling = false;
-    f->buffered_airdodge = false;
     set_state(f, ST_AIRDODGE);
 }
 
+/* Melee-Dash: Startgeschwindigkeit wird zur aktuellen addiert. Im ersten Frame bewegt sich der
+ * Kämpfer noch mit der alten Geschwindigkeit (die neue wirkt ab dem nächsten Frame). */
 static void start_dash(Fighter *f, int dir)
 {
+    float old = f->vel.x;
     f->facing = dir;
-    f->vel.x = (float)dir * f->p.dash_init;
+    f->smash_turn = false;
+    f->vel.x = old + (float)dir * f->p.dash_init;
+    f->pos.x -= f->vel.x - old;          /* Physik bewegt gleich um vel.x -> effektiv um "old" */
     set_state(f, ST_DASH);
 }
 
-static void start_turn(Fighter *f)
+static void start_turn(Fighter *f, bool smash)
 {
+    if (f->state == ST_DASH) {
+        /* Zurückdashen: Melee drittelt-viertelt den Schwung (gemessen: v * 0.25 - Traction) */
+        f->vel.x *= 0.25f;
+        f->vel.x = approach(f->vel.x, 0, f->p.ground_friction);
+    }
     f->facing = -f->facing;
+    f->smash_turn = smash;
     set_state(f, ST_TURN);
 }
 
@@ -127,8 +151,6 @@ static void land(Game *g, Fighter *f, int surf)
 static bool try_ground_actions(Game *g, Fighter *f)
 {
     if (jump_pressed(f)) {
-        f->full_hop = true;
-        f->buffered_airdodge = false;
         set_state(f, ST_JUMPSQUAT);
         return true;
     }
@@ -249,25 +271,40 @@ static void update_state(Game *g, Fighter *f)
     case ST_IDLE:
         if (try_ground_actions(g, f)) break;
         ground_friction(f);
-        if (smash_x(f)) start_dash(f, (int)signf(sx));
-        else if (fabsf(sx) > 0.25f) {
-            if ((int)signf(sx) != f->facing) start_turn(f);
+        if (smash_x(f)) {
+            if ((int)signf(sx) != f->facing) start_turn(f, true);   /* Melee: erst 1 Frame Turn */
+            else start_dash(f, (int)signf(sx));
+        } else if (fabsf(sx) > 0.25f) {
+            if ((int)signf(sx) != f->facing) start_turn(f, false);
             else set_state(f, ST_WALK);
         } else if (sy < -0.6f) set_state(f, ST_CROUCH);
         break;
 
     case ST_WALK:
         if (try_ground_actions(g, f)) break;
-        if (smash_x(f)) start_dash(f, (int)signf(sx));
+        if (smash_x(f)) {
+            if ((int)signf(sx) != f->facing) start_turn(f, true);
+            else start_dash(f, (int)signf(sx));
+        }
         else if (fabsf(sx) < 0.25f) { ground_friction(f); set_state(f, ST_IDLE); }
-        else if ((int)signf(sx) != f->facing) start_turn(f);
+        else if ((int)signf(sx) != f->facing) start_turn(f, false);
         else f->vel.x = approach(f->vel.x, sx * f->p.walk_max, f->p.walk_accel);
         break;
 
     case ST_DASH:
         if (try_ground_actions(g, f)) break;
-        if (smash_x(f) && (int)signf(sx) != f->facing) { start_dash(f, (int)signf(sx)); break; } /* Dashdance */
-        f->vel.x = approach(f->vel.x, (float)f->facing * f->p.dash_init, 0.3f);
+        if (smash_x(f) && (int)signf(sx) != f->facing) { start_turn(f, true); break; } /* Dashdance */
+        {
+            /* Beschleunigen bis Run-Speed * |Stick|, sonst mit Traction bremsen */
+            float along = sx * (float)f->facing;
+            float speed = f->vel.x * (float)f->facing;
+            float cap = f->p.run_max * fmaxf(along, 0.0f);
+            if (along > 0.25f && speed < cap)
+                speed = fminf(speed + f->p.dash_accel_base + f->p.dash_accel_add * along, cap);
+            else
+                speed = approach(speed, along > 0.25f ? cap : 0.0f, f->p.ground_friction);
+            f->vel.x = speed * (float)f->facing;
+        }
         if (f->state_frame >= DASH_FRAMES) {
             if (sx * (float)f->facing > 0.6f) set_state(f, ST_RUN);
             else set_state(f, ST_IDLE);
@@ -276,7 +313,7 @@ static void update_state(Game *g, Fighter *f)
 
     case ST_RUN:
         if (try_ground_actions(g, f)) break;
-        if (sx * (float)f->facing < -0.6f) start_turn(f);
+        if (sx * (float)f->facing < -0.6f) start_turn(f, false);
         else if (fabsf(sx) < 0.25f) set_state(f, ST_IDLE);
         else f->vel.x = approach(f->vel.x, (float)f->facing * f->p.run_max, 0.15f);
         break;
@@ -284,7 +321,7 @@ static void update_state(Game *g, Fighter *f)
     case ST_TURN:
         if (try_ground_actions(g, f)) break;
         ground_friction(f);
-        if (smash_x(f)) start_dash(f, (int)signf(sx));
+        if (smash_x(f) || (f->smash_turn && sx * (float)f->facing > 0.8f)) start_dash(f, (int)signf(sx));
         else if (f->state_frame >= 3) set_state(f, fabsf(sx) > 0.25f ? ST_WALK : ST_IDLE);
         break;
 
@@ -296,15 +333,15 @@ static void update_state(Game *g, Fighter *f)
 
     case ST_JUMPSQUAT:
         ground_friction(f);
-        f->full_hop = f->full_hop && (f->in.jump || sy > 0.66f);
-        if (pressed_shield(f)) f->buffered_airdodge = true;
         if (f->state_frame >= f->p.jumpsquat) {
-            f->vel.y = f->full_hop ? f->p.fullhop : f->p.shorthop;
+            /* Full Hop, wenn am Ende des Jumpsquats noch eine Sprungeingabe gehalten wird */
+            bool full = f->in.jump || sy > 0.66f;
+            f->vel.y = full ? f->p.fullhop : f->p.shorthop;
             f->vel.x = clampf(f->vel.x * 0.8f + sx * 0.35f, -f->p.air_max * 1.2f, f->p.air_max * 1.2f);
             f->jumps_left = f->p.max_jumps - 1;
-            f->pos.y += 0.01f;
             enter_air(f, ST_AIR);
-            if (f->buffered_airdodge) start_airdodge(f);
+            /* L/R im Absprung-Frame: Airdodge ersetzt den Sprung sofort (Wavedash) */
+            if (pressed_shield(f)) start_airdodge(f);
         }
         break;
 
@@ -454,12 +491,13 @@ static void physics(Game *g, Fighter *f)
         if (f->state == ST_AIRDODGE) f->vel.x = approach(f->vel.x, 0, f->p.air_friction);
     }
 
-    /* Landung auf Oberkanten */
+    /* Landung auf Oberkanten (geprüft an der ECB-Unterkante) */
+    float ecb = ECB_AIR_OFFSET;
     if (vy_total <= 0) {
         for (int i = 0; i < st->nsurf; i++) {
             const Surface *s = &st->surf[i];
             if (s->kind == SURF_PLATFORM && f->drop_through > 0) continue;
-            if (old.y >= s->y - 0.01f && f->pos.y <= s->y && f->pos.x >= s->x0 && f->pos.x <= s->x1) {
+            if (old.y + ecb >= s->y - 0.01f && f->pos.y + ecb <= s->y && f->pos.x >= s->x0 && f->pos.x <= s->x1) {
                 land(g, f, i);
                 return;
             }
@@ -471,7 +509,7 @@ static void physics(Game *g, Fighter *f)
     for (int i = 0; i < st->nsurf; i++) {
         const Surface *s = &st->surf[i];
         if (s->kind != SURF_SOLID) continue;
-        float L = f->pos.x - hw, R = f->pos.x + hw, B = f->pos.y, T = f->pos.y + h;
+        float L = f->pos.x - hw, R = f->pos.x + hw, B = f->pos.y + ecb, T = f->pos.y + h;
         if (R > s->x0 && L < s->x1 && T > s->bottom && B < s->y) {
             if (old.y + h <= s->bottom + 0.01f) {
                 f->pos.y = s->bottom - h;

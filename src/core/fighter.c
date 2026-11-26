@@ -66,6 +66,9 @@ FighterParams fighter_params(CharId c)
     p.dash_init = r->dash_init;
     p.run_max = r->run;
     p.ground_friction = r->traction;
+    /* aus Slippi-Daten gemessen (Fox, Sheik: 0.12 bei vollem Stick); für Birdie/Duelist übernommen */
+    p.dash_accel_base = 0.02f;
+    p.dash_accel_add = 0.1f;
     p.air_accel_base = r->accel_base;
     p.air_accel_add = r->accel_add;
     p.air_max = r->air_speed;

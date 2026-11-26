@@ -22,6 +22,12 @@ if(NOT MSVC)
   target_compile_options(core PRIVATE -Wall -Wextra)
 endif()
 
+# --- Slippi-Parser und Analyse-Tool ---
+add_library(slp STATIC src/slp/slp.c)
+target_include_directories(slp PUBLIC src/slp)
+add_executable(slp_analyze tools/slp_analyze.c)
+target_link_libraries(slp_analyze PRIVATE core slp)
+
 add_executable(sim_test tests/sim_test.c)
 target_link_libraries(sim_test PRIVATE core)
 enable_testing()

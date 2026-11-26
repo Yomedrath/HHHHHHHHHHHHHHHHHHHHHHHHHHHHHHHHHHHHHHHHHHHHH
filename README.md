@@ -65,6 +65,42 @@ Funktionen: Dash, Dashdance, Run, Turn, Crouch, Short Hop und Full Hop, Doppelsp
 Airdodge, Wavedash, Waveland, Plattform-Drop, Ledge-Grab mit Getup und Ledge-Jump, Knockback mit
 Hitstun, KOs und 4 Stocks.
 
+## Vergleich mit echtem Melee (Slippi-Replays)
+
+`slp_analyze` liest Slippi-Replays (`.slp`) und sucht darin Wavedashes, Wavelands, Dashdances,
+Short Hops und Full Hops. Jede gefundene Szene spielt es mit **denselben Controller-Eingaben** in der
+Engine nach und vergleicht beide Ergebnisse Frame für Frame:
+
+```sh
+slp_analyze replay.slp [--csv frames.csv] [--top 5]
+```
+
+- **Unterstützt:** Fox, Falcon, Sheik und Marth auf BF, FD, YS, DL, FoD und PS, andere Ports werden
+  übersprungen. Fox wird als Fuchs nachgespielt, Falcon als Birdie, Sheik als Assassin, Marth als
+  Duelist.
+- **Weg:** Wie weit sich der Kämpfer in der Szene bewegt, real und in der Engine.
+- **Abw. Ende / max:** Positionsabweichung am Ende der Szene und die größte über die ganze Szene.
+- **Zustand=:** Anteil der Frames, in denen die Engine dieselbe Aktion macht (Dash, Airdodge,
+  Landung …). Ein niedriger Wert heißt: Die Engine interpretiert die menschliche Eingabe anders.
+  Ein hoher Wert mit großer Abweichung heißt: gleicher Zustand, aber andere Physik.
+- **Größte Abweichungen:** Werden mit Zeit und Frame-Nummer aufgelistet, damit man sie in Slippi
+  nachsehen kann. Die CSV enthält alle Szenen Frame für Frame.
+
+Die Erkennung ist bewusst tolerant, weil Menschen nicht exakt spielen: Zwischen Dashes dürfen kurze
+Walk-, Wait- oder Turn-Frames liegen. Wavedashes werden auch erkannt, wenn der Airdodge erst einen
+Frame nach dem Absprung kommt oder im selben Frame landet.
+
+Was die Replays bisher gezeigt haben und was jetzt in der Engine steckt:
+- L und R werden einzeln als Druck gewertet. Wer R aus dem Shield hält und L drückt, macht einen
+  Airdodge.
+- L/R im Absprung-Frame ersetzt den Sprung sofort durch den Airdodge.
+- Full Hop oder Short Hop entscheidet sich am Ende des Jumpsquats.
+- Über der maximalen Gehgeschwindigkeit bremst der Boden doppelt (z. B. nach einem Wavedash).
+- Dash: Die Startgeschwindigkeit wird zur aktuellen addiert und wirkt erst ab Frame 2. Danach
+  beschleunigt der Dash mit 0.02 + 0.1·|Stick| bis Run-Speed·|Stick|. Beim Zurückdashen kommt immer
+  ein Turn-Frame mit Geschwindigkeit·0.25 dazwischen.
+- Vereinfachte ECB: In der Luft wird 3 Einheiten über den Füßen kollidiert.
+
 ## Replays und Videos
 
 - **Replays:** Jedes Match wird automatisch als Replay in `replays/` gespeichert, wenige KB pro

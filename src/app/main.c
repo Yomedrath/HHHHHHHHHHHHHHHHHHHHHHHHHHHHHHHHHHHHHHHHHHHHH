@@ -72,9 +72,8 @@ static void read_pad(SDL_Gamepad *g, Input *in)
             break;
         }
     }
-    if (axis(g, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 0.3f || axis(g, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 0.3f ||
-        SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER))
-        in->shield = true;
+    in->l = axis(g, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 0.3f || SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+    in->r = axis(g, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 0.3f;
     if (SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)) in->z = true;
     if (SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_START)) in->start = true;
 }

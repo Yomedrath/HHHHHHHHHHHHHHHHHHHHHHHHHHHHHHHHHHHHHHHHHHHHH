@@ -54,11 +54,12 @@ jobs:
           mkdir -p dist
           cp README.md dist/
           case "$RUNNER_OS" in
-            Linux)   cp build/proto1v1 dist/ && tar -czf proto1v1-${{ matrix.name }}.tar.gz -C dist . ;;
-            Windows) cp build/Release/proto1v1.exe dist/ && 7z a proto1v1-${{ matrix.name }}.zip ./dist/* ;;
+            Linux)   cp build/proto1v1 build/slp_analyze dist/ && tar -czf proto1v1-${{ matrix.name }}.tar.gz -C dist . ;;
+            Windows) cp build/Release/proto1v1.exe build/Release/slp_analyze.exe dist/ && 7z a proto1v1-${{ matrix.name }}.zip ./dist/* ;;
             macOS)   codesign --force --deep -s - build/proto1v1.app
-                     cp -R build/proto1v1.app dist/
-                     (cd dist && ditto -c -k --keepParent proto1v1.app ../proto1v1-${{ matrix.name }}.zip) ;;
+                     codesign --force -s - build/slp_analyze
+                     cp -R build/proto1v1.app build/slp_analyze dist/
+                     (cd dist && zip -qry ../proto1v1-${{ matrix.name }}.zip .) ;;
           esac
 
       - uses: actions/upload-artifact@v4

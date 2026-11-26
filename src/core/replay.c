@@ -31,7 +31,7 @@ static void pack(const Input *in, uint8_t *o)
     o[2] = (uint8_t)q8(in->cstick_x);
     o[3] = (uint8_t)q8(in->cstick_y);
     o[4] = (uint8_t)((in->a ? 1 : 0) | (in->b ? 2 : 0) | (in->jump ? 4 : 0) | (in->shield ? 8 : 0) |
-                     (in->z ? 16 : 0) | (in->start ? 32 : 0));
+                     (in->z ? 16 : 0) | (in->start ? 32 : 0) | (in->l ? 64 : 0) | (in->r ? 128 : 0));
     o[5] = 0;
 }
 
@@ -43,6 +43,7 @@ static void unpack(const uint8_t *o, Input *in)
     in->cstick_y = (int8_t)o[3] / 127.0f;
     in->a = o[4] & 1; in->b = o[4] & 2; in->jump = o[4] & 4;
     in->shield = o[4] & 8; in->z = o[4] & 16; in->start = o[4] & 32;
+    in->l = o[4] & 64; in->r = o[4] & 128;
 }
 
 void replay_init(Replay *r, int stage, const CharId chars[MAX_FIGHTERS])
