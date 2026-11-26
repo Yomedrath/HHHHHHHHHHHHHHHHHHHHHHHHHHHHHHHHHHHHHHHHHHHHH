@@ -121,6 +121,17 @@ slp_techniques ausgabe/ spiel1.slp spiel2.slp ... [--video] [--per 2] [--slow 2]
 - **Video:** Mit `--video` entsteht `alle_techniken.mp4` mit Beispielen in Zeitlupe, Action State,
   Frame-Zähler und Inputanzeige (Stick, C-Stick, Tasten, Trigger).
 
+### Technik-Datenbank
+
+Unter [`data/techniques/`](data/techniques) liegen 1.388 echte Szenen aus 21 Community-Replays
+(Fox, Falco, Falcon, Marth, Sheik, DK und Pikachu auf allen 6 Stages). Es gibt einen Ordner pro Technik.
+[`techniques.md`](data/techniques/techniques.md) enthält Beschreibungen, Fundstellen und die
+Abdeckung nach Charakter, Stage und Untergrund. [`index.csv`](data/techniques/index.csv) dient zum
+Filtern. Ein Übersichtsvideo liegt unter [`docs/alle_techniken.mp4`](docs/alle_techniken.mp4).
+
+Neu erzeugen oder um eigene Replays erweitern:
+`slp_techniques data/techniques <alle .slp-Dateien> --video`
+
 ## Replays und Videos
 
 - **Replays:** Jedes Match wird automatisch als Replay in `replays/` gespeichert, wenige KB pro
