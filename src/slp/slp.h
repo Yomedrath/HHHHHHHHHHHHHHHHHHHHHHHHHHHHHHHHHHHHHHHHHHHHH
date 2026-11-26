@@ -39,6 +39,7 @@ typedef struct {
     uint16_t action;
     float x, y, facing, percent, action_frame;
     uint8_t stocks, airborne, jumps_left;
+    uint8_t lcancel;                /* 0 keins, 1 erfolgreich, 2 verpasst */
     uint16_t last_ground;
     float self_air_x, self_y, attack_x, attack_y, ground_x;
 } SlpFrame;
@@ -50,10 +51,18 @@ typedef struct {
     int type[SLP_PORTS];            /* 0 Mensch, 1 CPU, 3 leer */
     int nframes;                    /* Index 0 = Frame -123 */
     SlpFrame *frames[SLP_PORTS];    /* NULL für leere Ports */
+    uint8_t *file;                  /* Originaldaten (für Clips) */
+    size_t file_len;
+    size_t raw_off, raw_len;        /* Lage des Event-Streams in file */
+    uint16_t sizes[256];            /* Payload-Größen */
 } SlpGame;
 
 bool slp_load(const char *path, SlpGame *g, char *err, size_t errlen);
 void slp_free(SlpGame *g);
+
+/* Ausschnitt [first, last] (Frame-Indizes, 0 = Frame -123) als eigenständiges .slp schreiben.
+ * Frames werden so umnummeriert, dass der Clip bei Frame -123 beginnt. */
+bool slp_write_clip(const SlpGame *g, int first, int last, const char *path);
 
 const char *slp_char_name(int ext_char);
 const char *slp_stage_name(int stage);

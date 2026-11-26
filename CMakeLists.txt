@@ -49,6 +49,12 @@ if(PROTO_BUILD_GAME)
     FetchContent_MakeAvailable(SDL3)
   endif()
 
+  add_executable(slp_techniques tools/slp_techniques.c)
+  target_link_libraries(slp_techniques PRIVATE slp SDL3::SDL3)
+  if(NOT MSVC)
+    target_link_libraries(slp_techniques PRIVATE m)
+  endif()
+
   add_executable(proto1v1 WIN32 MACOSX_BUNDLE src/app/main.c)
   target_link_libraries(proto1v1 PRIVATE core SDL3::SDL3)
   set_target_properties(proto1v1 PROPERTIES MACOSX_BUNDLE_BUNDLE_NAME "proto1v1")

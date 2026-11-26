@@ -101,6 +101,26 @@ Was die Replays bisher gezeigt haben und was jetzt in der Engine steckt:
   ein Turn-Frame mit Geschwindigkeit·0.25 dazwischen.
 - Vereinfachte ECB: In der Luft wird 3 Einheiten über den Füßen kollidiert.
 
+## Advanced Techniques aus echten Replays ausschneiden
+
+`slp_techniques` sucht in einem oder mehreren Slippi-Replays nach diesen Techniken: SHFFL,
+autocanceled Aerial, Aerial Interrupt, No Impact Land, PC Drop, Multishine, Waveshine, Pivot, Pivot
+Grab, Empty Pivot, Pivot in einen Angriff, edgecanceled Aerial, Ledgedash und Ledgestall.
+
+```sh
+slp_techniques ausgabe/ spiel1.slp spiel2.slp ... [--video] [--per 2] [--slow 2]
+```
+
+- **Clips:** Jede gefundene Szene wird als eigene, kurze `.slp` mit 30 Frames Vor- und Nachlauf
+  gespeichert, sortiert nach Technik, Charakter, Stage und Untergrund (Boden oder Plattformhöhe).
+  Die Clips enthalten echte Melee-Daten und lassen sich im Slippi Launcher oder im Browser auf
+  slippilab.com ansehen.
+- **Übersicht:** `techniques.md` beschreibt jede Technik, listet alle Fundstellen mit Zeit und
+  zeigt die Abdeckung nach Technik, Charakter, Stage und Untergrund. So sieht man, welche
+  Kombinationen noch fehlen.
+- **Video:** Mit `--video` entsteht `alle_techniken.mp4` mit Beispielen in Zeitlupe, Action State,
+  Frame-Zähler und Inputanzeige (Stick, C-Stick, Tasten, Trigger).
+
 ## Replays und Videos
 
 - **Replays:** Jedes Match wird automatisch als Replay in `replays/` gespeichert, wenige KB pro

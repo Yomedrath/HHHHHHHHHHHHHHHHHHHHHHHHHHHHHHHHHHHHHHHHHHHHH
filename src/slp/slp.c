@@ -53,7 +53,7 @@ bool slp_load(const char *path, SlpGame *g, char *err, size_t errlen)
     }
 
     /* Event Payloads: Größe jedes Kommandos */
-    uint16_t sizes[256] = { 0 };
+    uint16_t *sizes = g->sizes;
     uint8_t psz = raw[1];
     for (size_t k = 2; k + 2 < (size_t)psz + 1 && k + 2 < rawlen; k += 3)
         sizes[raw[k]] = (uint16_t)((raw[k + 1] << 8) | raw[k + 2]);
@@ -126,6 +126,7 @@ bool slp_load(const char *path, SlpGame *g, char *err, size_t errlen)
             s->airborne = rd_u8(ev, 0x2F);
             s->last_ground = rd_u16(ev, 0x30);
             s->jumps_left = rd_u8(ev, 0x32);
+            s->lcancel = rd_u8(ev, 0x33);
             s->self_air_x = rd_f32(ev, 0x35);   /* ab Slippi 3.5.0 */
             s->self_y = rd_f32(ev, 0x39);
             s->attack_x = rd_f32(ev, 0x3D);
@@ -133,7 +134,10 @@ bool slp_load(const char *path, SlpGame *g, char *err, size_t errlen)
             s->ground_x = rd_f32(ev, 0x45);
         }
     }
-    free(data);
+    g->file = data;
+    g->file_len = (size_t)fsz;
+    g->raw_off = (size_t)(raw - data);
+    g->raw_len = rawlen;
     if (!have_start) { slp_free(g); set_err(err, errlen, "Game-Start-Event fehlt"); return false; }
     return true;
 }
@@ -141,6 +145,111 @@ bool slp_load(const char *path, SlpGame *g, char *err, size_t errlen)
 void slp_free(SlpGame *g)
 {
     for (int p = 0; p < SLP_PORTS; p++) { free(g->frames[p]); g->frames[p] = NULL; }
+    free(g->file);
+    g->file = NULL;
+}
+
+/* ---------- Clips schreiben ---------- */
+
+static void put_be32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
+
+static void ub_key(FILE *f, const char *k) { uint8_t n = (uint8_t)strlen(k); fputc('U', f); fputc(n, f); fwrite(k, 1, n, f); }
+static void ub_str(FILE *f, const char *v) { fputc('S', f); ub_key(f, v); }
+
+bool slp_write_clip(const SlpGame *g, int first, int last, const char *path)
+{
+    if (!g->file || first < 0 || last >= g->nframes || first > last) return false;
+    const uint8_t *raw = g->file + g->raw_off;
+    size_t rawlen = g->raw_len;
+    uint8_t *out = malloc(rawlen);
+    if (!out) return false;
+    size_t o = 0;
+    int f0 = first + SLP_FIRST_FRAME, f1 = last + SLP_FIRST_FRAME;
+    int shift = SLP_FIRST_FRAME - f0;                 /* neue Nummer = alt + shift */
+
+    size_t psz = (size_t)raw[1] + 1;
+    memcpy(out, raw, psz);                            /* Event Payloads */
+    o = psz;
+    for (size_t pos = psz; pos < rawlen;) {
+        uint8_t cmd = raw[pos];
+        if (cmd == 0x35 || g->sizes[cmd] == 0) break;
+        size_t n = (size_t)g->sizes[cmd] + 1;
+        if (pos + n > rawlen) break;
+        const uint8_t *ev = raw + pos;
+        pos += n;
+        bool framed = cmd == 0x37 || cmd == 0x38 || cmd == 0x3A || cmd == 0x3B || cmd == 0x3C;
+        if (framed) {
+            int fr = (int32_t)(((uint32_t)ev[1] << 24) | ((uint32_t)ev[2] << 16) | ((uint32_t)ev[3] << 8) | ev[4]);
+            if (fr < f0 || fr > f1) continue;
+            memcpy(out + o, ev, n);
+            put_be32(out + o + 1, (uint32_t)(fr + shift));
+            if (cmd == 0x3C && n >= 9) {               /* Bookend: "latest finalized frame" */
+                int lf = (int32_t)(((uint32_t)ev[5] << 24) | ((uint32_t)ev[6] << 16) | ((uint32_t)ev[7] << 8) | ev[8]);
+                put_be32(out + o + 5, (uint32_t)(lf + shift));
+            }
+            o += n;
+        } else if (cmd == 0x39) {
+            continue;                                 /* Game End kommt ans Ende */
+        } else {
+            memcpy(out + o, ev, n);                   /* Game Start, Gecko-Codes usw. */
+            o += n;
+        }
+    }
+    /* Game End: Methode 7 (No Contest) */
+    if (g->sizes[0x39]) {
+        size_t n = (size_t)g->sizes[0x39] + 1;
+        memset(out + o, 0, n);
+        out[o] = 0x39;
+        out[o + 1] = 7;
+        if (n > 2) out[o + 2] = 0xFF;                 /* LRAS-Initiator: keiner */
+        o += n;
+    }
+
+    FILE *f = fopen(path, "wb");
+    if (!f) { free(out); return false; }
+    fputc('{', f);
+    ub_key(f, "raw");
+    fputc('[', f); fputc('$', f); fputc('U', f); fputc('#', f); fputc('l', f);
+    uint8_t lenb[4]; put_be32(lenb, (uint32_t)o);
+    fwrite(lenb, 1, 4, f);
+    fwrite(out, 1, o, f);
+    free(out);
+
+    /* Metadaten des Originals übernehmen, nur lastFrame anpassen */
+    size_t mstart = g->raw_off + g->raw_len;
+    size_t mlen = g->file_len > mstart ? g->file_len - mstart : 0;
+    static const char lfkey[] = "lastFramel";
+    bool patched = false;
+    if (mlen > 2) {
+        uint8_t *meta = malloc(mlen);
+        if (meta) {
+            memcpy(meta, g->file + mstart, mlen);
+            for (size_t i = 0; i + sizeof(lfkey) - 1 + 4 <= mlen; i++) {
+                if (memcmp(meta + i, lfkey, sizeof(lfkey) - 1) == 0) {
+                    put_be32(meta + i + sizeof(lfkey) - 1, (uint32_t)(f1 + shift));
+                    patched = true;
+                    break;
+                }
+            }
+            fwrite(meta, 1, mlen, f);
+            free(meta);
+        }
+    }
+    if (!patched && mlen <= 2) {
+        ub_key(f, "metadata");
+        fputc('{', f);
+        ub_key(f, "startAt");
+        ub_str(f, "2000-01-01T00:00:00Z");
+        ub_key(f, "lastFrame");
+        fputc('l', f);
+        uint8_t lf[4]; put_be32(lf, (uint32_t)(f1 + shift));
+        fwrite(lf, 1, 4, f);
+        ub_key(f, "playedOn");
+        ub_str(f, "clip");
+        fputc('}', f);
+        fputc('}', f);
+    }
+    return fclose(f) == 0;
 }
 
 const char *slp_char_name(int c)
