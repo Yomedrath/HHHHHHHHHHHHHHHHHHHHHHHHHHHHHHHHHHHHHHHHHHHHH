@@ -166,6 +166,12 @@ static void simulate(const SlpGame *sg, Event *ev)
         f->vel.y = f->grounded ? 0 : s0->y - fr[ev->start - 2].y;
     }
     f->jumps_left = s0->jumps_left;
+    if (f->state == ST_LANDING) {
+        /* Landing-Lag-Länge aus dem echten Zustand ableiten */
+        if (s0->action == AS_LANDING) f->landing_lag = f->p.land_lag;
+        else if (s0->action == AS_LANDING_FALL_SPECIAL) f->landing_lag = AIRDODGE_LAND_LAG;
+        else f->landing_lag = 15;   /* Aerial-Landung: Szene startet selten hier */
+    }
     f->in = map_input(s0);
     f->stick_x_hist[0] = s0->stick_x;
     f->stick_x_hist[1] = fr[ev->start - 2].stick_x;
@@ -321,7 +327,12 @@ static void detect(const SlpGame *sg, int port, EventList *out)
                 if (a != AS_JUMP_F && a != AS_JUMP_B) { clean = false; break; }
                 top = fr[j].y;
             }
-            if (!clean || j - t < 4) continue;
+            /* nur natürlicher Scheitelpunkt: danach weiter Sprung- oder Fallzustand, keine neue Aktion
+             * (sonst wurde der Aufstieg abgebrochen, z. B. Airdodge/Waveland – keine eigene Sprunghöhe) */
+            if (j + 1 >= n) continue;
+            uint16_t after = fr[j + 1].action;
+            bool natural = after == AS_JUMP_F || after == AS_JUMP_B || (after >= AS_FALL && after <= AS_FALL + 2);
+            if (!clean || !natural || j - t < 4) continue;
             float h = top - y0;
             Event e = { 0 };
             e.tech = fabsf(h - sh) < fabsf(h - fh) ? T_SHORTHOP : T_FULLHOP;

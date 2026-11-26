@@ -365,8 +365,9 @@ static void update_state(Game *g, Fighter *f)
     case ST_JUMPSQUAT:
         ground_friction(f);
         if (f->state_frame >= f->p.jumpsquat) {
-            /* Full Hop, wenn am Ende des Jumpsquats noch eine Sprungeingabe gehalten wird */
-            bool full = f->in.jump || sy > 0.66f;
+            /* Full Hop, wenn im letzten Jumpsquat-Frame noch eine Sprungeingabe gehalten wurde
+             * (Slippi-Daten: Loslassen genau im Absprung-Frame ergibt trotzdem Full Hop) */
+            bool full = f->prev.jump || f->prev.stick_y > 0.66f;
             f->vel.y = full ? f->p.fullhop : f->p.shorthop;
             f->vel.x = clampf(f->vel.x * f->p.jump_h_ground + sx * f->p.jump_h_stick, -f->p.jump_h_max, f->p.jump_h_max);
             f->jumps_left = f->p.max_jumps - 1;
@@ -377,8 +378,13 @@ static void update_state(Game *g, Fighter *f)
         break;
 
     case ST_LANDING:
+        /* Nach dem Landing Lag ist der Kämpfer im selben Frame handlungsfähig (Melee: Landing ist
+         * ab dem Lag-Ende interruptible, z. B. Sprung direkt aus der Landeanimation) */
+        if (f->state_frame >= f->landing_lag) {
+            set_state(f, ST_IDLE);
+            if (try_ground_actions(g, f)) break;
+        }
         ground_friction(f);
-        if (f->state_frame >= f->landing_lag) set_state(f, ST_IDLE);
         break;
 
     case ST_ATTACK: {
