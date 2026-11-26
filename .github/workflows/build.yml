@@ -1,0 +1,89 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-universal
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux-Abhängigkeiten für SDL3
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+            wayland-protocols libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libudev-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libdrm-dev libgbm-dev libusb-1.0-0-dev
+
+      - name: Konfigurieren
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ "$RUNNER_OS" = "macOS" ]; then EXTRA='-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then EXTRA='-G Ninja -DCMAKE_C_COMPILER=gcc'; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $EXTRA
+
+      - name: Bauen
+        run: cmake --build build --config Release --parallel
+
+      - name: Tests (Headless-Simulation)
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Paketieren
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp README.md dist/
+          case "$RUNNER_OS" in
+            Linux)   cp build/proto1v1 dist/ && tar -czf proto1v1-${{ matrix.name }}.tar.gz -C dist . ;;
+            Windows) cp build/Release/proto1v1.exe dist/ && 7z a proto1v1-${{ matrix.name }}.zip ./dist/* ;;
+            macOS)   codesign --force --deep -s - build/proto1v1.app
+                     cp -R build/proto1v1.app dist/
+                     (cd dist && ditto -c -k --keepParent proto1v1.app ../proto1v1-${{ matrix.name }}.zip) ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proto1v1-${{ matrix.name }}
+          path: proto1v1-${{ matrix.name }}.*
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Tag "latest" auf diesen Commit setzen
+        run: |
+          git tag -f latest
+          git push -f origin latest
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Neuester Build
+          prerelease: true
+          body: Automatischer Build von ${{ github.sha }}. Windows (.zip), Linux (.tar.gz), macOS (.zip).
+          files: artifacts/*
